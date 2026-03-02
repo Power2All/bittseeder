@@ -131,6 +131,9 @@
       <button class="ui icon button" title="Global Settings" onclick="openSettings()">
         <i class="cog icon"></i> Settings
       </button>
+      <button class="ui teal button" onclick="batchAdd()" title="Scan source folder and add all new items as torrents">
+        <i class="th list icon"></i>Batch Add
+      </button>
       <button class="ui primary button" onclick="toggleAddForm()">
         <i class="plus icon"></i>Add Torrent
       </button>
@@ -237,10 +240,14 @@
       </div>
       <div class="two fields">
         <div class="field">
-          <label>Torrent Metadata File (.torrent)</label>
+          <label>Torrent Metadata File (.torrent) — type a path, browse, or upload</label>
           <div class="ui action input">
             <input type="text" id="f-torrent-file" placeholder="/path/to/existing.torrent">
-            <button class="ui icon button" type="button" title="Browse" onclick="openBrowser('f-torrent-file','file')"><i class="folder open icon"></i></button>
+            <button class="ui icon button" type="button" title="Browse path on server" onclick="openBrowser('f-torrent-file','file')"><i class="folder open icon"></i></button>
+            <label class="ui icon button" title="Upload .torrent file from your computer" style="cursor:pointer;margin:0">
+              <i class="upload icon"></i>
+              <input type="file" id="f-torrent-upload" accept=".torrent" style="display:none" onchange="uploadTorrentFile()">
+            </label>
           </div>
         </div>
         <div class="field">
@@ -296,6 +303,7 @@
         <a class="item active" data-tab="network">Network</a>
         <a class="item" data-tab="security">Security</a>
         <a class="item" data-tab="logging">Logging</a>
+        <a class="item" data-tab="performance">Performance</a>
       </div>
 
       <div class="ui bottom attached active tab segment" data-tab="network">
@@ -321,6 +329,19 @@
                 <option value="bt">bt (BitTorrent only)</option>
                 <option value="rtc">rtc (WebRTC only)</option>
               </select>
+            </div>
+          </div>
+          <h4 class="ui dividing header">Batch Add</h4>
+          <div class="field">
+            <label>Source Folder (scanned when you click "Batch Add")</label>
+            <div class="ui action input">
+              <input type="text" id="s-source-folder" placeholder="/mnt/media/library">
+              <button class="ui icon button" type="button" title="Browse" onclick="openBrowser('s-source-folder','dir')"><i class="folder open icon"></i></button>
+            </div>
+            <div class="ui tiny info message" style="margin-top:6px;padding:6px 10px">
+              <i class="info circle icon"></i>
+              Each top-level file or folder in this directory will be added as a separate torrent entry.
+              Items already tracked are skipped automatically.
             </div>
           </div>
           <h4 class="ui dividing header">WebRTC (RTC protocol)</h4>
@@ -417,6 +438,29 @@
                 <label>Show periodic upload stats (takes effect on reload)</label>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="ui bottom attached tab segment" data-tab="performance">
+        <div class="ui form">
+          <h4 class="ui dividing header">Thread Count</h4>
+          <div class="two fields">
+            <div class="field">
+              <label>Seeder Worker Threads (blank = auto-detect from CPU count)</label>
+              <input type="number" id="s-seeder-threads" placeholder="auto" min="1" max="256">
+            </div>
+            <div class="field">
+              <label>Web Server Worker Threads (blank = auto-detect from CPU count)</label>
+              <input type="number" id="s-web-threads" placeholder="auto" min="1" max="256">
+            </div>
+          </div>
+          <div class="ui info message">
+            <i class="info circle icon"></i>
+            Both settings take effect on the next reload (triggered automatically on Save).
+            <strong>Seeder threads</strong> control how many OS threads the async task scheduler uses.
+            <strong>Web server threads</strong> control how many HTTP request handler threads actix-web creates;
+            the web server is restarted automatically when this value changes.
           </div>
         </div>
       </div>
@@ -1042,6 +1086,9 @@ async function openSettings() {
     document.getElementById('s-web-key').value = cfg.web_key || '';
     document.getElementById('s-log-level').value = cfg.log_level || 'info';
     document.getElementById('s-show-stats').checked = cfg.show_stats !== false;
+    document.getElementById('s-seeder-threads').value = cfg.seeder_threads || '';
+    document.getElementById('s-web-threads').value = cfg.web_threads || '';
+    document.getElementById('s-source-folder').value = cfg.source_folder || '';
     if (cfg.proxy) {
       document.getElementById('s-proxy-type').value = cfg.proxy.proxy_type || '';
       document.getElementById('s-proxy-host').value = cfg.proxy.host || '';
@@ -1094,6 +1141,9 @@ async function saveSettings() {
     upnp: document.getElementById('s-upnp').checked ? true : null,
     log_level: document.getElementById('s-log-level').value || null,
     show_stats: document.getElementById('s-show-stats').checked ? true : null,
+    seeder_threads: parseInt(document.getElementById('s-seeder-threads').value) || null,
+    web_threads: parseInt(document.getElementById('s-web-threads').value) || null,
+    source_folder: document.getElementById('s-source-folder').value.trim() || null,
   };
   try {
     const r = await apiFetch('/api/config', {
@@ -1140,7 +1190,7 @@ function openBrowser(inputId, mode) {
   browserNavigate(startPath);
   $('#file-browser-modal').modal({
     onHidden: function() {
-      if (['s-web-cert','s-web-key'].includes(browserTarget)) {
+      if (['s-web-cert','s-web-key','s-source-folder'].includes(browserTarget)) {
         $('#settings-modal').modal('show');
       }
     }
@@ -1231,6 +1281,63 @@ $(document).on('click', '.browser-item', function() {
     browserSelectFile(path);
   }
 });
+
+async function uploadTorrentFile() {
+  const fileInput = document.getElementById('f-torrent-upload');
+  const file = fileInput.files[0];
+  if (!file) return;
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const headers = {};
+    if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
+    headers['Content-Type'] = 'application/octet-stream';
+    const r = await fetch('/api/upload-torrent?name=' + encodeURIComponent(file.name), {
+      method: 'POST',
+      headers,
+      body: arrayBuffer,
+    });
+    if (r.status === 401) {
+      authToken = null;
+      localStorage.removeItem('seeder_token');
+      showLogin();
+      return;
+    }
+    if (r.ok) {
+      const result = await r.json();
+      document.getElementById('f-torrent-file').value = result.path;
+    } else {
+      alert('Upload failed: ' + await r.text());
+    }
+  } catch(e) {
+    alert('Upload error: ' + e.message);
+  }
+  fileInput.value = '';
+}
+
+async function batchAdd() {
+  try {
+    const r = await apiFetch('/api/batch-add', { method: 'POST' });
+    if (r.ok) {
+      const result = await r.json();
+      if (result.added === 0) {
+        const msg = result.skipped > 0
+          ? `No new items found — ${result.skipped} already tracked.`
+          : 'Source folder is empty or has no new items.';
+        alert(msg);
+      } else {
+        document.getElementById('status-text').textContent =
+          `Batch add: ${result.added} new torrent(s) added, ${result.skipped} already tracked — reloading…`;
+        setTimeout(loadTorrents, 2000);
+      }
+    } else {
+      let msg;
+      try { msg = (await r.json()).error; } catch { msg = await r.text(); }
+      alert('Batch add failed: ' + msg);
+    }
+  } catch(e) {
+    if (e.message !== 'Unauthorized') alert('Error: ' + e.message);
+  }
+}
 </script>
 </body>
 </html>

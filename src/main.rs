@@ -123,28 +123,41 @@ fn parse_protocol(s: Option<&str>) -> SeedProtocol {
     }
 }
 
-fn spawn_web_server(
+async fn spawn_web_server(
     web_cfg: WebConfig,
+    web_threads: Option<usize>,
     yaml_path: PathBuf,
     shared_file: Arc<RwLock<TorrentsFile>>,
     stats: crate::stats::shared_stats::SharedStats,
     reload_tx: tokio::sync::watch::Sender<()>,
     log_tx: broadcast::Sender<String>,
     log_buffer: std::sync::Arc<std::sync::Mutex<VecDeque<String>>>,
-) {
-    std::thread::spawn(move || {
+) -> Option<(std::thread::JoinHandle<()>, actix_web::dev::ServerHandle)> {
+    let (handle_tx, handle_rx) = std::sync::mpsc::sync_channel::<actix_web::dev::ServerHandle>(1);
+    let thread = std::thread::spawn(move || {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .expect("failed to build web server runtime");
         rt.block_on(async move {
             if let Err(e) = web::server::start(
-                web_cfg, yaml_path, shared_file, stats, reload_tx, log_tx, log_buffer,
+                web_cfg, web_threads, yaml_path, shared_file, stats, reload_tx, log_tx, log_buffer, handle_tx,
             ).await {
                 log::error!("[Web] Server error: {}", e);
             }
         });
     });
+    match tokio::task::spawn_blocking(move || handle_rx.recv().ok())
+        .await
+        .ok()
+        .flatten()
+    {
+        Some(handle) => Some((thread, handle)),
+        None => {
+            let _ = tokio::task::spawn_blocking(move || { let _ = thread.join(); }).await;
+            None
+        }
+    }
 }
 
 fn parse_log_level(s: &str) -> log::LevelFilter {
@@ -379,7 +392,7 @@ async fn main() {
                 cert_path: cli.web_cert.clone(),
                 key_path: cli.web_key.clone(),
             };
-            spawn_web_server(web_cfg, yaml_path, shared_file, shared_stats, reload_tx, log_tx.clone(), std::sync::Arc::clone(&log_buffer));
+            spawn_web_server(web_cfg, None, yaml_path, shared_file, shared_stats, reload_tx, log_tx.clone(), std::sync::Arc::clone(&log_buffer)).await;
         }
         let (_stop_tx, stop_rx) = tokio::sync::watch::channel(false);
         let mut s = Seeder::new(config, torrent_info);
@@ -538,6 +551,14 @@ async fn seed_one(
     shared_stats.write().await.remove(&label);
 }
 
+fn build_seeder_runtime(seeder_threads: Option<usize>) -> tokio::runtime::Runtime {
+    let mut builder = tokio::runtime::Builder::new_multi_thread();
+    if let Some(n) = seeder_threads {
+        builder.worker_threads(n);
+    }
+    builder.enable_all().build().expect("failed to build seeder runtime")
+}
+
 async fn run_torrents_mode(
     yaml_path: PathBuf,
     cli_proxy: Option<ProxyConfig>,
@@ -571,19 +592,27 @@ async fn run_torrents_mode(
             std::process::exit(1);
         }
     };
-    {
-        let web_cfg = WebConfig {
-            port: cli_web.port,
-            password: cli_web.password.or(yaml_for_web.config.web_password.clone()),
-            cert_path: cli_web.cert_path.or(yaml_for_web.config.web_cert.clone()),
-            key_path: cli_web.key_path.or(yaml_for_web.config.web_key.clone()),
-        };
-        let sf = Arc::clone(&shared_file);
-        let ss = Arc::clone(&shared_stats);
-        let rtx = reload_tx.clone();
-        let yp = yaml_path.clone();
-        spawn_web_server(web_cfg, yp, sf, ss, rtx, log_tx.clone(), std::sync::Arc::clone(&log_buffer));
-    }
+    let cli_web_port = cli_web.port;
+    let cli_web_password = cli_web.password.clone();
+    let cli_web_cert     = cli_web.cert_path.clone();
+    let cli_web_key      = cli_web.key_path.clone();
+    let mut current_web_threads = yaml_for_web.config.web_threads;
+    let initial_web_cfg = WebConfig {
+        port: cli_web_port,
+        password: cli_web_password.clone().or_else(|| yaml_for_web.config.web_password.clone()),
+        cert_path: cli_web_cert.clone().or_else(|| yaml_for_web.config.web_cert.clone()),
+        key_path:  cli_web_key.clone().or_else(|| yaml_for_web.config.web_key.clone()),
+    };
+    let mut web_server_info = spawn_web_server(
+        initial_web_cfg,
+        current_web_threads,
+        yaml_path.clone(),
+        Arc::clone(&shared_file),
+        Arc::clone(&shared_stats),
+        reload_tx.clone(),
+        log_tx.clone(),
+        std::sync::Arc::clone(&log_buffer),
+    ).await;
     loop {
         let (file, entries) = match load_yaml_entries(&yaml_path, cli_proxy.as_ref(), cli_upnp, cli_protocol) {
             Ok(e) => e,
@@ -601,9 +630,18 @@ async fn run_torrents_mode(
                 SeedProtocol::Both => "both",
             }))
         );
+        let new_seeder_threads = file.config.seeder_threads;
+        let new_web_threads    = file.config.web_threads;
         {
             let mut sf = shared_file.write().await;
             *sf = file;
+        }
+        let seeder_rt = build_seeder_runtime(new_seeder_threads);
+        {
+            let label = new_seeder_threads
+                .map(|n| format!("{} thread(s)", n))
+                .unwrap_or_else(|| "auto (CPU count)".to_string());
+            log::info!("[BittSeeder] Seeder runtime: {}", label);
         }
         if entries.is_empty() {
             println!("[BittSeeder] No enabled torrent entries — waiting for changes…");
@@ -613,7 +651,7 @@ async fn run_torrents_mode(
         let registry = new_registry();
         let listener_handle = if effective_protocol.has_bt() {
             let reg = Arc::clone(&registry);
-            Some(tokio::spawn(async move {
+            Some(seeder_rt.spawn(async move {
                 run_shared_listener(effective_listen_port, reg, effective_upnp).await;
             }))
         } else {
@@ -627,7 +665,7 @@ async fn run_torrents_mode(
                 stop_txs.push(stop_tx);
                 let reg = if cfg.protocol.has_bt() { Some(Arc::clone(&registry)) } else { None };
                 let ss = Arc::clone(&shared_stats);
-                tokio::spawn(seed_one(label, cfg, reg, stop_rx, ss))
+                seeder_rt.spawn(seed_one(label, cfg, reg, stop_rx, ss))
             })
             .collect();
         let initial_mtime = file_mtime(&yaml_path);
@@ -690,11 +728,46 @@ async fn run_torrents_mode(
         for ah in abort_handles {
             ah.abort();
         }
-        if should_reload {
-            println!("[BittSeeder] Applying new config…\n");
-        } else {
+        tokio::task::spawn_blocking(move || {
+            seeder_rt.shutdown_timeout(std::time::Duration::from_secs(5));
+        }).await.ok();
+        if !should_reload {
+            if let Some((_, handle)) = web_server_info.take() {
+                handle.stop(true).await;
+            }
             println!("[BittSeeder] Shutting down.");
             break;
         }
+        if new_web_threads != current_web_threads {
+            log::info!(
+                "[Web] Thread count changed ({} → {}), restarting web server…",
+                current_web_threads.map(|n| n.to_string()).unwrap_or_else(|| "auto".to_string()),
+                new_web_threads.map(|n| n.to_string()).unwrap_or_else(|| "auto".to_string()),
+            );
+            if let Some((old_thread, old_handle)) = web_server_info.take() {
+                old_handle.stop(true).await;
+                tokio::task::spawn_blocking(move || { let _ = old_thread.join(); }).await.ok();
+            }
+            let cfg_now = shared_file.read().await.config.clone();
+            let new_web_cfg = WebConfig {
+                port: cli_web_port,
+                password: cli_web_password.clone().or_else(|| cfg_now.web_password.clone()),
+                cert_path: cli_web_cert.clone().or_else(|| cfg_now.web_cert.clone()),
+                key_path:  cli_web_key.clone().or_else(|| cfg_now.web_key.clone()),
+            };
+            web_server_info = spawn_web_server(
+                new_web_cfg,
+                new_web_threads,
+                yaml_path.clone(),
+                Arc::clone(&shared_file),
+                Arc::clone(&shared_stats),
+                reload_tx.clone(),
+                log_tx.clone(),
+                std::sync::Arc::clone(&log_buffer),
+            ).await;
+            current_web_threads = new_web_threads;
+        }
+
+        println!("[BittSeeder] Applying new config…\n");
     }
 }

@@ -20,4 +20,7 @@ pub struct GlobalConfig {
     pub protocol: Option<SeedProtocol>,
     pub rtc_ice_servers: Option<Vec<String>>,
     pub rtc_interval_ms: Option<u64>,
+    pub web_threads: Option<usize>,
+    pub seeder_threads: Option<usize>,
+    pub source_folder: Option<std::path::PathBuf>,
 }

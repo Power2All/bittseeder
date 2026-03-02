@@ -5,6 +5,7 @@ use crate::stats::shared_stats::SharedStats;
 use crate::web::structs::app_state::AppState;
 use actix_web::{
     web::{
+        Bytes,
         Data,
         Json,
         Path,
@@ -22,7 +23,10 @@ use argon2::{
 use futures_util::StreamExt as _;
 use serde::Deserialize;
 use serde_json::json;
-use std::collections::VecDeque;
+use std::collections::{
+    HashSet,
+    VecDeque,
+};
 use std::io;
 use std::sync::Arc;
 use std::time::{
@@ -409,4 +413,127 @@ pub async fn update_config(req: HttpRequest, data: Data<AppState>, body: Json<Gl
     }
     let _ = data.reload_tx.send(());
     HttpResponse::Ok().json(json!({"ok": true}))
+}
+
+#[derive(Deserialize)]
+pub struct UploadTorrentQuery {
+    pub name: Option<String>,
+}
+
+pub async fn upload_torrent(
+    req: HttpRequest,
+    data: Data<AppState>,
+    query: Query<UploadTorrentQuery>,
+    body: Bytes,
+) -> HttpResponse {
+    if !is_authenticated(&req, &data).await {
+        return HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}));
+    }
+    if body.is_empty() {
+        return HttpResponse::BadRequest().json(json!({"error": "File body is empty"}));
+    }
+    let raw_name = query.name.as_deref().unwrap_or("upload.torrent");
+    let base_name = std::path::Path::new(raw_name)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("upload.torrent");
+    let filename = if base_name.to_ascii_lowercase().ends_with(".torrent") {
+        base_name.to_string()
+    } else {
+        format!("{}.torrent", base_name)
+    };
+    let base_dir = data.yaml_path.parent()
+        .unwrap_or(std::path::Path::new("."))
+        .to_path_buf();
+    let upload_dir = base_dir.join("uploaded_torrents");
+    if let Err(e) = std::fs::create_dir_all(&upload_dir) {
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to create upload directory: {}", e));
+    }
+    let dest = upload_dir.join(&filename);
+    if let Err(e) = std::fs::write(&dest, &body) {
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to write torrent file: {}", e));
+    }
+    log::info!("[Web] Uploaded torrent: {}", dest.display());
+    HttpResponse::Ok().json(json!({
+        "path": dest.to_string_lossy(),
+        "name": filename,
+    }))
+}
+
+pub async fn batch_add(req: HttpRequest, data: Data<AppState>) -> HttpResponse {
+    if !is_authenticated(&req, &data).await {
+        return HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}));
+    }
+    let source_folder = {
+        let file = data.shared_file.read().await;
+        file.config.source_folder.clone()
+    };
+    let source_folder = match source_folder {
+        Some(p) => p,
+        None => return HttpResponse::BadRequest().json(json!({
+            "error": "No source_folder is configured. Set it in Global Settings → Network first."
+        })),
+    };
+    if !source_folder.exists() {
+        return HttpResponse::BadRequest().json(json!({
+            "error": format!("Source folder does not exist: {}", source_folder.display()),
+        }));
+    }
+    let read_dir = match std::fs::read_dir(&source_folder) {
+        Ok(rd) => rd,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+    let mut file = data.shared_file.write().await;
+    let existing_paths: HashSet<String> = file.torrents
+        .iter()
+        .flat_map(|t| t.file.iter().cloned())
+        .collect();
+    let mut added = 0usize;
+    let mut skipped = 0usize;
+    for dir_entry in read_dir.filter_map(|e| e.ok()) {
+        let name = dir_entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') {
+            continue;
+        }
+        let path = dir_entry.path();
+        let path_str = path.to_string_lossy().into_owned();
+        if existing_paths.contains(&path_str) {
+            skipped += 1;
+            continue;
+        }
+        let torrent_name = if path.is_dir() {
+            name.clone()
+        } else {
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or(&name)
+                .to_string()
+        };
+        file.torrents.push(TorrentEntry {
+            out: None,
+            name: Some(torrent_name),
+            file: vec![path_str],
+            trackers: vec![],
+            webseed: None,
+            ice: None,
+            rtc_interval: None,
+            protocol: None,
+            version: None,
+            torrent_file: None,
+            magnet: None,
+            enabled: true,
+            upload_limit: None,
+        });
+        added += 1;
+    }
+    if added > 0 {
+        if let Err(e) = write_yaml(&data.yaml_path, &file) {
+            return HttpResponse::InternalServerError().body(e.to_string());
+        }
+        let _ = data.reload_tx.send(());
+    }
+    log::info!("[Web] Batch add: {} added, {} skipped", added, skipped);
+    HttpResponse::Ok().json(json!({ "added": added, "skipped": skipped }))
 }

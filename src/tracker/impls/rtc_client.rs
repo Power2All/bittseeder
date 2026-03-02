@@ -1,8 +1,6 @@
 use crate::config::structs::proxy_config::ProxyConfig;
-use crate::tracker::structs::rtc_client::{
-    RtcAnnounceResponse,
-    RtcTrackerClient
-};
+use crate::tracker::structs::rtc_announce_response::RtcAnnounceResponse;
+use crate::tracker::structs::rtc_client::RtcTrackerClient;
 use crate::tracker::tracker::{
     build_reqwest_client,
     parse_rtc_announce_response

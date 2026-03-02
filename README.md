@@ -27,6 +27,8 @@ BittSeeder handles both protocols from a single binary. Both share the same torr
   - [Authentication](#authentication)
   - [Password hashing](#password-hashing-argon2id)
   - [Endpoints](#endpoints)
+- [Batch Add & torrent upload](#batch-add--torrent-upload)
+- [Thread count configuration](#thread-count-configuration)
 - [Protocol selection reference](#protocol-selection-reference)
 - [Client identification](#client-identification)
 - [Architecture overview](#architecture-overview)
@@ -254,6 +256,9 @@ torrents:
 | `log_level` | `string` | `info` | Log verbosity |
 | `show_stats` | `bool` | `true` | Print periodic peer/upload stats to stdout |
 | `proxy` | `object` | — | Outbound proxy for tracker announces |
+| `web_threads` | `usize` | *(auto)* | Number of actix-web worker threads (omit to let the OS decide) |
+| `seeder_threads` | `usize` | *(auto)* | Number of tokio worker threads used by the seeder runtime (omit to use all CPU cores) |
+| `source_folder` | `path` | — | Directory scanned by the **Batch Add** feature |
 
 ### Torrent entry keys
 
@@ -286,6 +291,8 @@ Features:
 - Live **Peers** and **Upload Speed** charts (24 h / 48 h / 72 h window)
 - Per-torrent uploaded bytes and active peer count, updated every second via WebSocket
 - Add, edit, enable/disable, and delete torrents without restarting
+- **Batch Add** — scan a configured source folder and register every top-level file/folder as a new torrent entry in one click
+- **Upload `.torrent`** — upload an existing `.torrent` file directly from your browser instead of typing a server-side path
 - Dark/light theme toggle
 - Live **Console** log viewer (last 10 000 lines, streaming via WebSocket)
 
@@ -345,6 +352,57 @@ config:
 | `PUT` | `/api/torrents/{idx}` | Replace torrent entry at index |
 | `DELETE` | `/api/torrents/{idx}` | Remove torrent entry at index |
 | `GET` | `/api/browse?path=…` | Server-side file browser |
+| `POST` | `/api/upload-torrent?name=<filename>` | Upload a `.torrent` file (raw bytes body, ≤ 32 MiB) |
+| `POST` | `/api/batch-add` | Scan `source_folder` and bulk-add all untracked top-level entries |
+
+---
+
+## Batch Add & torrent upload
+
+### Batch Add
+
+The **Batch Add** button in the web UI calls `POST /api/batch-add`. It reads the `source_folder` value from the global config (set it in **Settings → Network → Batch Add**), then scans every top-level file and directory inside that folder. Any entry that is not already tracked (matched by absolute path) is automatically added as a new torrent entry with:
+
+- `name` — the file/directory name
+- `file` — the absolute path
+- `trackers` — empty list (fill in afterwards via the edit dialog)
+- `enabled` — `true`
+
+Hidden entries (names starting with `.`) are silently skipped. After adding, the config is saved to disk and a hot-reload is triggered.
+
+The response body is:
+
+```json
+{ "added": 3, "skipped": 1 }
+```
+
+### Torrent file upload
+
+In the **Add Torrent** dialog there is an upload icon next to the `.torrent` browse button. Clicking it opens a native file picker restricted to `.torrent` files. The selected file is sent as a raw binary `POST` to `/api/upload-torrent?name=<filename>` (max 32 MiB). The server saves the file under `<yaml-dir>/uploaded_torrents/<filename>` and returns:
+
+```json
+{ "path": "/absolute/path/to/uploaded_torrents/filename.torrent", "name": "filename.torrent" }
+```
+
+The returned path is filled into the `.torrent` field of the Add Torrent form automatically, ready to submit.
+
+---
+
+## Thread count configuration
+
+BittSeeder runs two independent runtimes whose thread counts can be tuned separately — either in the YAML config or through the web UI **Settings → Performance** tab.
+
+| Config key | Web UI field | What it controls |
+|---|---|---|
+| `web_threads` | Web threads | Number of actix-web worker threads serving the HTTP/WebSocket API |
+| `seeder_threads` | Seeder threads | Number of tokio worker threads in the dedicated seeder runtime |
+
+When a field is left blank (or the YAML key is absent) the runtime uses its default — for actix-web that is the number of logical CPUs; for tokio it is also all logical CPUs.
+
+**On-the-fly changes:**
+
+- **Seeder threads** — applied immediately on every hot-reload. The existing seeder runtime is shut down cleanly and a new one is started with the updated thread count. Active peers are disconnected and reconnect after the seeder restarts (usually within a couple of seconds).
+- **Web threads** — applied by hot-restarting the actix-web server. The old server is stopped gracefully (`ServerHandle::stop(true)`) and a new one is spawned with the new worker count. The brief downtime is typically under a second.
 
 ---
 

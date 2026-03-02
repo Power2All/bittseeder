@@ -3,6 +3,7 @@ use crate::config::structs::web_config::WebConfig;
 use crate::stats::shared_stats::SharedStats;
 use crate::web::api::{
     add_torrent,
+    batch_add,
     browse,
     delete_torrent,
     get_config,
@@ -15,6 +16,7 @@ use crate::web::api::{
     post_logout,
     update_config,
     update_torrent,
+    upload_torrent,
 };
 use crate::web::structs::app_state::{
     AppState,
@@ -43,12 +45,14 @@ use tokio::sync::{
 
 pub async fn start(
     config: WebConfig,
+    web_threads: Option<usize>,
     yaml_path: PathBuf,
     shared_file: Arc<RwLock<TorrentsFile>>,
     stats: SharedStats,
     reload_tx: watch::Sender<()>,
     log_tx: broadcast::Sender<String>,
     log_buffer: Arc<std::sync::Mutex<VecDeque<String>>>,
+    server_handle_tx: std::sync::mpsc::SyncSender<actix_web::dev::ServerHandle>,
 ) -> std::io::Result<()> {
     let sessions: SessionStore = Arc::new(Mutex::new(HashMap::new()));
     let state = Data::new(AppState {
@@ -67,11 +71,20 @@ pub async fn start(
         None
     };
     let bind_addr = format!("0.0.0.0:{}", config.port);
-    log::info!("[Web] Starting on http{}://{}", if cert_key.is_some() { "s" } else { "" }, bind_addr);
-    let server = HttpServer::new(move || {
+    let thread_label = web_threads
+        .map(|n| format!("{}", n))
+        .unwrap_or_else(|| "auto".to_string());
+    log::info!(
+        "[Web] Starting on http{}://{} ({} worker thread(s))",
+        if cert_key.is_some() { "s" } else { "" },
+        bind_addr,
+        thread_label
+    );
+    let mut server_builder = HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
             .app_data(web::JsonConfig::default().limit(1024 * 1024))
+            .app_data(web::PayloadConfig::default().limit(32 * 1024 * 1024))
             .route("/", web::get().to(get_index))
             .route("/logo.png", web::get().to(get_logo))
             .route("/api/ws", web::get().to(get_ws))
@@ -85,8 +98,13 @@ pub async fn start(
             .route("/api/torrents/{idx}", web::put().to(update_torrent))
             .route("/api/torrents/{idx}", web::delete().to(delete_torrent))
             .route("/api/browse", web::get().to(browse))
+            .route("/api/upload-torrent", web::post().to(upload_torrent))
+            .route("/api/batch-add", web::post().to(batch_add))
     });
-    if let Some((cert_path, key_path)) = cert_key {
+    if let Some(n) = web_threads {
+        server_builder = server_builder.workers(n);
+    }
+    let running = if let Some((cert_path, key_path)) = cert_key {
         let cert_data = std::fs::read(&cert_path)?;
         let key_data = std::fs::read(&key_path)?;
         let mut cert_reader = std::io::BufReader::new(cert_data.as_slice());
@@ -105,8 +123,10 @@ pub async fn start(
             .with_no_client_auth()
             .with_single_cert(certs, key)
             .map_err(std::io::Error::other)?;
-        server.bind_rustls_0_23(&bind_addr, tls_config)?.run().await
+        server_builder.bind_rustls_0_23(&bind_addr, tls_config)?.run()
     } else {
-        server.bind(&bind_addr)?.run().await
-    }
+        server_builder.bind(&bind_addr)?.run()
+    };
+    let _ = server_handle_tx.send(running.handle());
+    running.await
 }

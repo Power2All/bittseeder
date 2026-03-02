@@ -1,7 +1,7 @@
 use crate::config::structs::proxy_config::ProxyConfig;
 use crate::tracker::structs::announce_response::AnnounceResponse;
 use crate::tracker::structs::rtc_answer::RtcAnswer;
-use crate::tracker::structs::rtc_client::RtcAnnounceResponse;
+use crate::tracker::structs::rtc_announce_response::RtcAnnounceResponse;
 use bip_bencode::{
     BDecodeOpt,
     BRefAccess,
