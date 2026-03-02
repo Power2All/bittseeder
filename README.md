@@ -1,7 +1,7 @@
 # BittSeeder
 ![Test](https://github.com/Power2All/bittseeder/actions/workflows/rust.yml/badge.svg)
 [<img src="https://img.shields.io/badge/DockerHub-link-blue.svg">](<https://hub.docker.com/r/power2all/bittseeder>)
-[<img src="https://img.shields.io/discord/272362779157987328?label=Discord">](<https://discord.gg/zMyZJz4U2D>)
+[<img src="https://img.shields.io/discord/1476196704163201059?label=Discord">](<https://discord.gg/zMyZJz4U2D>)
 
 A fast, unified Rust seeder that serves torrent data over **BitTorrent** (BT wire protocol) and **WebRTC** (RTC data channels) simultaneously — or either one on its own.
 
