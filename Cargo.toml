@@ -2,7 +2,7 @@
 resolver = "3"
 
 [package]
-name = "BittSeeder"
+name = "bittseeder"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
@@ -12,10 +12,6 @@ authors = ["Jasper Lingers <info@power2all.com>"]
 [[bin]]
 name = "BittSeeder"
 path = "src/main.rs"
-
-[lib]
-name = "seeder"
-path = "src/lib.rs"
 
 [profile.release]
 opt-level = 3

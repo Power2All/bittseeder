@@ -1,5 +1,5 @@
-use seeder::torrent::structs::file_entry::FileEntry;
-use seeder::torrent::torrent::{
+use bittseeder::torrent::structs::file_entry::FileEntry;
+use bittseeder::torrent::torrent::{
     build_hybrid_magnet_uri,
     build_info_bencode,
     build_magnet_uri,
@@ -395,7 +395,7 @@ fn collect_dir_files_empty_dir() {
 }
 
 fn make_simple_torrent(tracker: &str, name: &str, content: &[u8]) -> Vec<u8> {
-    use seeder::torrent::torrent::{
+    use bittseeder::torrent::torrent::{
         build_info_bencode, build_torrent_bencode, hash_pieces, torrent_creation_date,
     };
     use std::io::Write;

@@ -1,4 +1,4 @@
-use seeder::web::api::verify_password;
+use bittseeder::web::api::verify_password;
 
 #[test]
 fn plaintext_match() {

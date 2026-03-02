@@ -3,40 +3,6 @@
 version = 4
 
 [[package]]
-name = "BittSeeder"
-version = "0.1.0"
-dependencies = [
- "actix-web",
- "actix-web-httpauth",
- "actix-ws",
- "argon2",
- "bip_bencode",
- "bytes",
- "chrono",
- "clap",
- "fern",
- "futures-util",
- "governor",
- "hex",
- "igd-next",
- "log",
- "percent-encoding",
- "rand 0.10.0",
- "reqwest",
- "rpassword",
- "rustls",
- "rustls-pemfile",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha1",
- "sha2",
- "tempfile",
- "tokio",
- "webrtc",
-]
-
-[[package]]
 name = "actix-codec"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -586,6 +552,40 @@ name = "bitflags"
 version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "843867be96c8daad0d758b57df9392b6d8d271134fce549de6ce169ff98a92af"
+
+[[package]]
+name = "bittseeder"
+version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "actix-web-httpauth",
+ "actix-ws",
+ "argon2",
+ "bip_bencode",
+ "bytes",
+ "chrono",
+ "clap",
+ "fern",
+ "futures-util",
+ "governor",
+ "hex",
+ "igd-next",
+ "log",
+ "percent-encoding",
+ "rand 0.10.0",
+ "reqwest",
+ "rpassword",
+ "rustls",
+ "rustls-pemfile",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha1",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "webrtc",
+]
 
 [[package]]
 name = "blake2"

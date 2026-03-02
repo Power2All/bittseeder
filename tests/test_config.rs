@@ -1,6 +1,6 @@
-use seeder::config::enums::seed_protocol::SeedProtocol;
-use seeder::config::structs::torrent_entry::TorrentEntry;
-use seeder::torrent::enums::torrent_version::TorrentVersion;
+use bittseeder::config::enums::seed_protocol::SeedProtocol;
+use bittseeder::config::structs::torrent_entry::TorrentEntry;
+use bittseeder::torrent::enums::torrent_version::TorrentVersion;
 
 fn default_entry() -> TorrentEntry {
     TorrentEntry {

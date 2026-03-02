@@ -48,10 +48,10 @@ BittSeeder handles both protocols from a single binary. Both share the same torr
 
 When `protocol` is `bt` or `both` (the default):
 
-1. **Torrent creation** — the seeder hashes the piece data (SHA-1 v1, SHA-256 v2, or hybrid) and writes a `.torrent` file.
+1. **Torrent creation** — BittSeeder hashes the piece data (SHA-1 v1, SHA-256 v2, or hybrid) and writes a `.torrent` file.
 2. **Tracker announce** — announces `started` to every configured tracker URL using HTTP (`http://`, `https://`) or the UDP tracker protocol (`udp://`). All trackers that respond successfully are kept; re-announces are sent to all of them. The re-announce interval is the minimum interval reported by any tracker.
 3. **TCP listener** — binds a TCP port (default `6881`). In multi-torrent mode a single shared listener handles all torrents by looking up the info-hash from the BT handshake.
-4. **Peer connection** — for each inbound TCP connection the seeder performs the BT handshake, sends a full bitfield, unchokes the peer, then fulfils `REQUEST` messages by reading blocks directly from disk (no full-file buffering).
+4. **Peer connection** — for each inbound TCP connection the BittSeeder performs the BT handshake, sends a full bitfield, unchokes the peer, then fulfils `REQUEST` messages by reading blocks directly from disk (no full-file buffering).
 5. **UPnP** — optionally maps the TCP port on the local gateway using `igd-next`.
 6. **Re-announce** — a background task re-announces at the tracker-supplied interval.
 
@@ -61,8 +61,8 @@ When `protocol` is `rtc` or `both`:
 
 1. **Offer creation** — a `RTCPeerConnection` is created and an SDP offer is generated with ICE candidates gathered (up to 5 s timeout). The seeder always holds one unused offer ready to hand to the next incoming peer.
 2. **Tracker announce** — announces to every HTTP(S) tracker URL with the SDP offer encoded as `rtcoffer=`. Each tracker stores the offer alongside the seeder's peer entry. Answers are collected from all trackers each signaling cycle.
-3. **Answer polling** — each signaling cycle the seeder re-announces and retrieves any pending `rtc_answers` from the tracker. For each answer it calls `set_remote_description` on the corresponding `PeerConnection`, completing the WebRTC handshake, and immediately creates a fresh offer for the next peer.
-4. **Data channel** — once the WebRTC data channel opens, the seeder listens for `MSG_PIECE_REQUEST` frames (1-byte type `0x01` + 4-byte big-endian piece index). It reads the full piece from disk and replies with either a single `MSG_PIECE_DATA` frame (≤ 65 531 bytes) or multiple `MSG_PIECE_CHUNK` frames for large pieces.
+3. **Answer polling** — each signaling cycle BittSeeder re-announces and retrieves any pending `rtc_answers` from the tracker. For each answer it calls `set_remote_description` on the corresponding `PeerConnection`, completing the WebRTC handshake, and immediately creates a fresh offer for the next peer.
+4. **Data channel** — once the WebRTC data channel opens, BittSeeder listens for `MSG_PIECE_REQUEST` frames (1-byte type `0x01` + 4-byte big-endian piece index). It reads the full piece from disk and replies with either a single `MSG_PIECE_DATA` frame (≤ 65 531 bytes) or multiple `MSG_PIECE_CHUNK` frames for large pieces.
 5. **Re-announce interval** — controlled by `rtc_interval_ms` (default `5000` ms), overridden by the tracker's `rtc interval` response field.
 
 ### Both mode
@@ -95,14 +95,14 @@ cargo build
 cargo build --release
 ```
 
-The binary is placed at `target/debug/seeder` or `target/release/seeder`.
+The binary is placed at `target/debug/BittSeeder` or `target/release/BittSeeder`.
 
 ---
 
 ## Usage — single-torrent (CLI)
 
 ```
-seeder [OPTIONS] [FILES]...
+BittSeeder [OPTIONS] [FILES]...
 ```
 
 ### Core flags
@@ -122,7 +122,7 @@ seeder [OPTIONS] [FILES]...
 | `--magnet <URI>` | — | Re-seed using a magnet URI |
 | `--webseed <URL>` | — | Web-seed URL (repeatable) |
 | `--upload-limit <KB/s>` | unlimited | Per-torrent upload rate cap |
-| `--web-port <PORT>` | — | Start the web management UI on this port |
+| `--web-port <PORT>` | `8090` | Start the web management UI on this port |
 | `--web-password <PASS>` | — | Protect the web UI with a password |
 | `--log-level <LEVEL>` | `info` | `error`, `warn`, `info`, `debug`, `trace` |
 
@@ -135,27 +135,27 @@ Supported types: `http`, `http_auth`, `socks4`, `socks5`, `socks5_auth`.
 
 ```bash
 # Seed a file over both BT and WebRTC
-seeder --tracker http://tracker.example.com/announce movie.mkv
+BittSeeder --tracker http://tracker.example.com/announce movie.mkv
 
 # BT only, custom port
-seeder --protocol bt --port 51413 --tracker udp://tracker.opentrackr.org:1337/announce film.mkv
+BittSeeder --protocol bt --port 51413 --tracker udp://tracker.opentrackr.org:1337/announce film.mkv
 
 # WebRTC only, custom ICE, fast polling
-seeder --protocol rtc \
+BittSeeder --protocol rtc \
   --tracker http://tracker.example.com/announce \
   --ice stun:stun.l.google.com:19302 \
   --rtc-interval 3000 \
   movie.mkv
 
 # Re-seed an existing torrent over both protocols
-seeder --torrent-file existing.torrent --tracker http://tracker.example.com/announce /data/movie.mkv
+BittSeeder --torrent-file existing.torrent --tracker http://tracker.example.com/announce /data/movie.mkv
 
 # Multi-file torrent
-seeder --name "My Album" --tracker http://tracker.example.com/announce \
+BittSeeder --name "My Album" --tracker http://tracker.example.com/announce \
   track01.flac track02.flac track03.flac
 
 # With web UI
-seeder --protocol both --port 6881 \
+BittSeeder --protocol both --port 6881 \
   --tracker http://tracker.example.com/announce \
   --web-port 8092 --web-password secret \
   movie.mkv
@@ -165,19 +165,23 @@ seeder --protocol both --port 6881 \
 
 ## Usage — multi-torrent (YAML)
 
-Pass a YAML config file with `--config`:
+When no files are given, BittSeeder automatically looks for `config.yaml` in the current directory. Pass `--config` to use a different file:
 
 ```bash
-seeder --config torrents.yaml
+# Uses config.yaml in the current directory (default)
+BittSeeder
+
+# Explicit config file
+BittSeeder --config torrents.yaml
 
 # Override protocol and port from CLI
-seeder --config torrents.yaml --protocol bt --port 6881
+BittSeeder --config torrents.yaml --protocol bt --port 6881
 
-# With web UI (port from CLI overrides YAML)
-seeder --config torrents.yaml --web-port 8092
+# Override web UI port (default: 8090)
+BittSeeder --config torrents.yaml --web-port 8092
 ```
 
-If the YAML file does not exist, `seeder` creates an empty one and waits. The config is hot-reloaded when the file changes on disk, a `SIGHUP` is received (Unix), or the web UI triggers a reload.
+If the YAML file does not exist, BittSeeder creates an empty one and waits. The config is hot-reloaded when the file changes on disk, a `SIGHUP` is received (Unix), or the web UI triggers a reload.
 
 ### YAML format
 
@@ -243,7 +247,7 @@ torrents:
 | `rtc_ice_servers` | `[string]` | Google STUN x2 | Default ICE server list |
 | `rtc_interval_ms` | `u64` | `5000` | Default RTC signaling interval (ms) |
 | `upnp` | `bool` | `false` | Enable UPnP port mapping |
-| `web_port` | `u16` | — | Web management UI port |
+| `web_port` | `u16` | `8090` | Web management UI port |
 | `web_password` | `string` | — | Web UI password (bearer token auth) |
 | `web_cert` | `path` | — | TLS certificate for HTTPS web UI |
 | `web_key` | `path` | — | TLS private key for HTTPS web UI |
@@ -276,7 +280,7 @@ torrents:
 
 ## Web management UI
 
-Start the web UI by setting `--web-port` or `config.web_port` in YAML. The UI is served at `http://host:<port>/`.
+The web UI starts automatically on port `8090` (override with `--web-port` or `config.web_port` in YAML). The UI is served at `http://host:<port>/`.
 
 Features:
 - Live **Peers** and **Upload Speed** charts (24 h / 48 h / 72 h window)
@@ -303,10 +307,10 @@ Passwords are stored and verified using **Argon2ID** — they are never stored i
 
 ```bash
 # Interactive (hidden input, confirmation prompt)
-seeder hash-password
+BittSeeder hash-password
 
 # Non-interactive (pipe-friendly)
-seeder hash-password mysecretpassword
+BittSeeder hash-password mysecretpassword
 ```
 
 The command prints a PHC-format string such as:
@@ -358,7 +362,7 @@ A torrent entry with `protocol: bt` in a `both`-mode YAML session still benefits
 
 ## Client identification
 
-The seeder uses the Azureus-style peer ID format:
+BittSeeder uses the Azureus-style peer ID format:
 
 ```
 -BS0100-<12 random digits>
@@ -370,14 +374,14 @@ The seeder uses the Azureus-style peer ID format:
 | `0100` | version digits | v0.1.0 |
 | 12 digits | random | unique per session |
 
-BitTorrent clients that maintain a known-client database (e.g. qBittorrent, Transmission) will display the raw code (`TS`) until BittSeeder is added to their fingerprint database. The seeder will **not** be misidentified as any other client.
+BitTorrent clients that maintain a known-client database (e.g. qBittorrent, Transmission) will display the raw code (`TS`) until BittSeeder is added to their fingerprint database. BittSeeder will **not** be misidentified as any other client.
 
 ---
 
 ## Architecture overview
 
 ```
-seeder binary
+BittSeeder binary
 │
 ├── config/
 │   ├── enums/seed_protocol.rs     SeedProtocol { Bt, Rtc, Both }

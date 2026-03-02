@@ -1,5 +1,5 @@
-use seeder::config::enums::seed_protocol::SeedProtocol;
-use seeder::seeder::seeder::generate_peer_id;
+use bittseeder::config::enums::seed_protocol::SeedProtocol;
+use bittseeder::seeder::seeder::generate_peer_id;
 
 #[test]
 fn bt_has_bt() {

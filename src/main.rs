@@ -60,8 +60,8 @@ impl log::Log for BroadcastLog {
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "seeder",
-    about = "Unified BT+RTC seeder — seed files over BitTorrent and/or WebRTC simultaneously"
+    name = "BittSeeder",
+    about = "Unified BT+RTC BittSeeder — seed files over BitTorrent and/or WebRTC simultaneously"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -92,8 +92,8 @@ struct Cli {
     torrent_file: Option<PathBuf>,
     #[arg(long, value_name = "MAGNET")]
     magnet: Option<String>,
-    #[arg(long)]
-    web_port: Option<u16>,
+    #[arg(long, default_value = "8090")]
+    web_port: u16,
     #[arg(long)]
     web_password: Option<String>,
     #[arg(long, value_name = "FILE")]
@@ -222,7 +222,12 @@ async fn main() {
     let (log_tx, _) = broadcast::channel::<String>(4096);
     let level_filter = {
         let s = cli.log_level.clone()
-            .or_else(|| cli.config.as_deref().and_then(|p| read_yaml_log_level(Path::new(p))))
+            .or_else(|| {
+                let config_path = cli.config.as_deref()
+                    .map(Path::new)
+                    .unwrap_or_else(|| Path::new("config.yaml"));
+                read_yaml_log_level(config_path)
+            })
             .unwrap_or_else(|| "info".to_string());
         parse_log_level(&s)
     };
@@ -255,7 +260,7 @@ async fn main() {
         }
         let cli_proxy = build_proxy_from_cli(&cli);
         let cli_web = WebConfig {
-            port: cli.web_port.unwrap_or(0),
+            port: cli.web_port,
             password: cli.web_password.clone(),
             cert_path: cli.web_cert.clone(),
             key_path: cli.web_key.clone(),
@@ -264,20 +269,16 @@ async fn main() {
     } else {
         let has_input = !cli.files.is_empty() || cli.torrent_file.is_some();
         if !has_input {
-            if cli.web_port.is_some() {
-                let yaml_path = PathBuf::from("torrents.yaml");
-                let cli_proxy = build_proxy_from_cli(&cli);
-                let cli_web = WebConfig {
-                    port: cli.web_port.unwrap_or(0),
-                    password: cli.web_password.clone(),
-                    cert_path: cli.web_cert.clone(),
-                    key_path: cli.web_key.clone(),
-                };
-                run_torrents_mode(yaml_path, cli_proxy, cli_web, cli.upnp, cli.protocol.as_deref(), log_tx.clone(), std::sync::Arc::clone(&log_buffer)).await;
-                return;
-            }
-            eprintln!("Error: provide file(s) to seed, or --torrent-file <path>, or --config <yaml>.");
-            std::process::exit(1);
+            let yaml_path = PathBuf::from("config.yaml");
+            let cli_proxy = build_proxy_from_cli(&cli);
+            let cli_web = WebConfig {
+                port: cli.web_port,
+                password: cli.web_password.clone(),
+                cert_path: cli.web_cert.clone(),
+                key_path: cli.web_key.clone(),
+            };
+            run_torrents_mode(yaml_path, cli_proxy, cli_web, cli.upnp, cli.protocol.as_deref(), log_tx.clone(), std::sync::Arc::clone(&log_buffer)).await;
+            return;
         }
         for path in &cli.files {
             if !path.exists() {
@@ -367,13 +368,13 @@ async fn main() {
                 std::process::exit(1);
             }
         };
-        if let Some(web_port) = cli.web_port {
+        {
             let yaml_path = PathBuf::from("torrents.yaml");
             let shared_file = Arc::new(RwLock::new(TorrentsFile::default()));
             let shared_stats = new_shared_stats();
             let (reload_tx, _reload_rx) = tokio::sync::watch::channel(());
             let web_cfg = WebConfig {
-                port: web_port,
+                port: cli.web_port,
                 password: cli.web_password.clone(),
                 cert_path: cli.web_cert.clone(),
                 key_path: cli.web_key.clone(),
@@ -445,7 +446,7 @@ fn load_yaml_entries(
                 result.push((label, cfg));
             }
             Err(e) => {
-                eprintln!("[seeder] Skipping entry {}: {}", i, e);
+                eprintln!("[BittSeeder] Skipping entry {}: {}", i, e);
             }
         }
     }
@@ -550,7 +551,7 @@ async fn run_torrents_mode(
     println!("Config  : {}", yaml_path.display());
     println!();
     if !yaml_path.exists() {
-        println!("[seeder] Creating empty config file: {}", yaml_path.display());
+        println!("[BittSeeder] Creating empty config file: {}", yaml_path.display());
         let empty = TorrentsFile::default();
         let s = serde_yaml::to_string(&empty).expect("serialize empty TorrentsFile");
         std::fs::write(&yaml_path, s).expect("write empty YAML");
@@ -566,18 +567,13 @@ async fn run_torrents_mode(
     let yaml_for_web = match load_yaml(&yaml_path) {
         Ok(f) => f,
         Err(e) => {
-            eprintln!("[seeder] Failed to load {}: {}", yaml_path.display(), e);
+            eprintln!("[BittSeeder] Failed to load {}: {}", yaml_path.display(), e);
             std::process::exit(1);
         }
     };
-    let effective_web_port = if cli_web.port > 0 {
-        Some(cli_web.port)
-    } else {
-        yaml_for_web.config.web_port
-    };
-    if let Some(web_port) = effective_web_port {
+    {
         let web_cfg = WebConfig {
-            port: web_port,
+            port: cli_web.port,
             password: cli_web.password.or(yaml_for_web.config.web_password.clone()),
             cert_path: cli_web.cert_path.or(yaml_for_web.config.web_cert.clone()),
             key_path: cli_web.key_path.or(yaml_for_web.config.web_key.clone()),
@@ -592,7 +588,7 @@ async fn run_torrents_mode(
         let (file, entries) = match load_yaml_entries(&yaml_path, cli_proxy.as_ref(), cli_upnp, cli_protocol) {
             Ok(e) => e,
             Err(e) => {
-                eprintln!("[seeder] Failed to load {}: {}", yaml_path.display(), e);
+                eprintln!("[BittSeeder] Failed to load {}: {}", yaml_path.display(), e);
                 std::process::exit(1);
             }
         };
@@ -610,9 +606,9 @@ async fn run_torrents_mode(
             *sf = file;
         }
         if entries.is_empty() {
-            println!("[seeder] No enabled torrent entries — waiting for changes…");
+            println!("[BittSeeder] No enabled torrent entries — waiting for changes…");
         } else {
-            println!("[seeder] Starting {} torrent(s)…", entries.len());
+            println!("[BittSeeder] Starting {} torrent(s)…", entries.len());
         }
         let registry = new_registry();
         let listener_handle = if effective_protocol.has_bt() {
@@ -640,16 +636,16 @@ async fn run_torrents_mode(
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => break 'wait false,
                 _ = sighup.recv() => {
-                    println!("[seeder] SIGHUP received — reloading…");
+                    println!("[BittSeeder] SIGHUP received — reloading…");
                     break 'wait true;
                 },
                 _ = reload_rx.changed() => {
-                    println!("[seeder] Web UI triggered reload…");
+                    println!("[BittSeeder] Web UI triggered reload…");
                     break 'wait true;
                 },
                 _ = tokio::time::sleep(std::time::Duration::from_secs(2)) => {
                     if file_mtime(&yaml_path) != initial_mtime {
-                        println!("[seeder] Config file changed on disk — reloading…");
+                        println!("[BittSeeder] Config file changed on disk — reloading…");
                         break 'wait true;
                     }
                 }
@@ -658,12 +654,12 @@ async fn run_torrents_mode(
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => break 'wait false,
                 _ = reload_rx.changed() => {
-                    println!("[seeder] Web UI triggered reload…");
+                    println!("[BittSeeder] Web UI triggered reload…");
                     break 'wait true;
                 },
                 _ = tokio::time::sleep(std::time::Duration::from_secs(2)) => {
                     if file_mtime(&yaml_path) != initial_mtime {
-                        println!("[seeder] Config file changed on disk — reloading…");
+                        println!("[BittSeeder] Config file changed on disk — reloading…");
                         break 'wait true;
                     }
                 }
@@ -677,9 +673,9 @@ async fn run_torrents_mode(
             let _ = tx.send(true);
         }
         let shutdown_msg = if should_reload {
-            "[seeder] Reloading — waiting for seeders to send 'stopped' announces (up to 15s)…"
+            "[BittSeeder] Reloading — waiting for seeders to send 'stopped' announces (up to 15s)…"
         } else {
-            "[seeder] Shutting down — waiting for seeders to send 'stopped' announces (up to 15s)…"
+            "[BittSeeder] Shutting down — waiting for seeders to send 'stopped' announces (up to 15s)…"
         };
         println!("{}", shutdown_msg);
         let abort_handles: Vec<_> = handles.iter().map(|h| h.abort_handle()).collect();
@@ -695,9 +691,9 @@ async fn run_torrents_mode(
             ah.abort();
         }
         if should_reload {
-            println!("[seeder] Applying new config…\n");
+            println!("[BittSeeder] Applying new config…\n");
         } else {
-            println!("[seeder] Shutting down.");
+            println!("[BittSeeder] Shutting down.");
             break;
         }
     }
