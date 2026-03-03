@@ -294,8 +294,10 @@ Features:
 - Add, edit, enable/disable, and delete torrents without restarting
 - **Batch Add** — scan a configured source folder and register every top-level file/folder as a new torrent entry in one click
 - **Upload `.torrent`** — upload an existing `.torrent` file directly from your browser instead of typing a server-side path
+- **Upload Files / Folders** — upload any file or entire folder from your browser directly to the server. Files are transferred in chunks with per-chunk SHA-256 validation; a full-file SHA-256 hash check is performed on finalize. Upload progress and hash-verification progress are shown live
 - Dark/light theme toggle
 - Live **Console** log viewer (last 10 000 lines, streaming via WebSocket)
+- Fully responsive — works on desktop, tablet, and mobile
 
 ### Authentication
 
@@ -356,6 +358,11 @@ config:
 | `POST` | `/api/mkdir` | Create a directory on the server: `{"path":"…"}` |
 | `POST` | `/api/upload-torrent?name=<filename>` | Upload a `.torrent` file (raw bytes body, ≤ 32 MiB) |
 | `POST` | `/api/batch-add` | Scan `source_folder` and bulk-add all untracked top-level entries |
+| `POST` | `/api/file-upload/init` | Start a chunked file upload session |
+| `POST` | `/api/file-upload/chunk` | Upload one chunk (per-chunk SHA-256 validated before writing) |
+| `POST` | `/api/file-upload/finalize` | Finalise upload — full-file SHA-256 verified, file renamed to destination |
+| `DELETE` | `/api/file-upload/{upload_id}` | Cancel a chunked upload and remove the partial file |
+| `GET` | `/api/file-upload/{upload_id}/hash-progress` | Poll full-file hash verification progress (`bytes_done`, `total`, `percent`) |
 
 ---
 
@@ -387,6 +394,20 @@ In the **Add Torrent** dialog there is an upload icon next to the `.torrent` bro
 ```
 
 The returned path is filled into the `.torrent` field of the Add Torrent form automatically, ready to submit.
+
+### File / folder upload
+
+The **Upload Files** button opens an upload modal where you can pick individual files or entire folders to send directly to the server.
+
+**How it works:**
+
+1. The client calls `POST /api/file-upload/init` with the destination path, total file size, number of chunks, chunk size, and the full-file SHA-256 hash computed in the browser.
+2. The server pre-allocates the destination file (`<dest>.uploaded`) at the full size (BitTorrent-style allocation).
+3. Each chunk is uploaded via `POST /api/file-upload/chunk`. The server validates the chunk's SHA-256 before writing it at the correct byte offset — no write-back verify.
+4. After all chunks are sent the client calls `POST /api/file-upload/finalize`. The server streams the entire pre-allocated file through a SHA-256 hash and compares it with the client-supplied hash. On mismatch the partial file is deleted and an error is returned; on success the file is renamed to its final destination path.
+5. While finalization runs the client polls `GET /api/file-upload/{upload_id}/hash-progress` every 400 ms and displays a live "Verifying X%" progress bar.
+
+A **Include folder name** toggle (default on) controls whether the top-level folder name is included in the destination path when uploading a folder.
 
 ---
 
