@@ -1,5 +1,6 @@
 use crate::config::structs::torrents_file::TorrentsFile;
 use crate::stats::shared_stats::SharedStats;
+use crate::web::structs::upload_session::UploadSession;
 use std::collections::{
     HashMap,
     VecDeque
@@ -14,6 +15,7 @@ use tokio::sync::{
 };
 
 pub type SessionStore = Arc<Mutex<HashMap<String, std::time::Instant>>>;
+pub type UploadStore  = Arc<Mutex<HashMap<String, UploadSession>>>;
 
 pub struct AppState {
     pub yaml_path: PathBuf,
@@ -24,4 +26,5 @@ pub struct AppState {
     pub sessions: SessionStore,
     pub log_tx: broadcast::Sender<String>,
     pub log_buffer: Arc<std::sync::Mutex<VecDeque<String>>>,
+    pub uploads: UploadStore,
 }

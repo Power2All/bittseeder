@@ -6,6 +6,11 @@ use crate::web::api::{
     batch_add,
     browse,
     delete_torrent,
+    file_upload_cancel,
+    file_upload_hash_progress,
+    file_upload_chunk,
+    file_upload_finalize,
+    file_upload_init,
     get_config,
     get_index,
     get_logo,
@@ -21,7 +26,8 @@ use crate::web::api::{
 };
 use crate::web::structs::app_state::{
     AppState,
-    SessionStore
+    SessionStore,
+    UploadStore,
 };
 use actix_web::{
     web::{
@@ -70,6 +76,7 @@ pub async fn start(
         log_buffer,
     } = params;
     let sessions: SessionStore = Arc::new(Mutex::new(HashMap::new()));
+    let uploads: UploadStore  = Arc::new(Mutex::new(HashMap::new()));
     let state = Data::new(AppState {
         yaml_path,
         shared_file,
@@ -79,6 +86,7 @@ pub async fn start(
         sessions,
         log_tx,
         log_buffer,
+        uploads,
     });
     let cert_key = if let (Some(cert), Some(key)) = (config.cert_path, config.key_path) {
         Some((cert, key))
@@ -116,6 +124,11 @@ pub async fn start(
             .route("/api/upload-torrent", web::post().to(upload_torrent))
             .route("/api/batch-add", web::post().to(batch_add))
             .route("/api/mkdir", web::post().to(mkdir))
+            .route("/api/file-upload/init", web::post().to(file_upload_init))
+            .route("/api/file-upload/chunk", web::post().to(file_upload_chunk))
+            .route("/api/file-upload/finalize", web::post().to(file_upload_finalize))
+            .route("/api/file-upload/{upload_id}", web::delete().to(file_upload_cancel))
+            .route("/api/file-upload/{upload_id}/hash-progress", web::get().to(file_upload_hash_progress))
     });
     if let Some(n) = web_threads {
         server_builder = server_builder.workers(n);

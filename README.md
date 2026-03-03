@@ -28,8 +28,10 @@ BittSeeder handles both protocols from a single binary. Both share the same torr
   - [Password hashing](#password-hashing-argon2id)
   - [Endpoints](#endpoints)
 - [Batch Add & torrent upload](#batch-add--torrent-upload)
+- [Let's Encrypt auto-certificate](#lets-encrypt-auto-certificate)
 - [Thread count configuration](#thread-count-configuration)
 - [Protocol selection reference](#protocol-selection-reference)
+- [Supported BEPs](#supported-beps)
 - [Client identification](#client-identification)
 - [Architecture overview](#architecture-overview)
 - [License](#license)
@@ -198,8 +200,13 @@ config:
   upnp: false
   web_port: 8092
   web_password: secret
+  # Manual TLS (mutually exclusive with Let's Encrypt below)
   # web_cert: /path/to/cert.pem
   # web_key:  /path/to/key.pem
+  # Automatic Let's Encrypt TLS (set domain + email to activate)
+  # letsencrypt_domain: myserver.example.com
+  # letsencrypt_email:  admin@example.com
+  # letsencrypt_http_port: 80     # port BittSeeder binds for HTTP-01 challenge
   log_level: info
   show_stats: true
   proxy:
@@ -259,6 +266,9 @@ torrents:
 | `web_threads` | `usize` | *(auto)* | Number of actix-web worker threads (omit to let the OS decide) |
 | `seeder_threads` | `usize` | *(auto)* | Number of tokio worker threads used by the seeder runtime (omit to use all CPU cores) |
 | `source_folder` | `path` | — | Directory scanned by the **Batch Add** feature |
+| `letsencrypt_domain` | `string` | — | Domain name for automatic Let's Encrypt TLS certificate |
+| `letsencrypt_email` | `string` | — | Contact email registered with the Let's Encrypt account |
+| `letsencrypt_http_port` | `u16` | `80` | Port BittSeeder binds to serve the HTTP-01 ACME challenge |
 
 ### Torrent entry keys
 
@@ -293,8 +303,10 @@ Features:
 - Add, edit, enable/disable, and delete torrents without restarting
 - **Batch Add** — scan a configured source folder and register every top-level file/folder as a new torrent entry in one click
 - **Upload `.torrent`** — upload an existing `.torrent` file directly from your browser instead of typing a server-side path
+- **Upload Files / Folders** — upload any file or entire folder from your browser directly to the server. Files are transferred in chunks with per-chunk SHA-256 validation; a full-file SHA-256 hash check is performed on finalize. Upload progress and hash-verification progress are shown live
 - Dark/light theme toggle
 - Live **Console** log viewer (last 10 000 lines, streaming via WebSocket)
+- Fully responsive — works on desktop, tablet, and mobile
 
 ### Authentication
 
@@ -352,8 +364,14 @@ config:
 | `PUT` | `/api/torrents/{idx}` | Replace torrent entry at index |
 | `DELETE` | `/api/torrents/{idx}` | Remove torrent entry at index |
 | `GET` | `/api/browse?path=…` | Server-side file browser |
+| `POST` | `/api/mkdir` | Create a directory on the server: `{"path":"…"}` |
 | `POST` | `/api/upload-torrent?name=<filename>` | Upload a `.torrent` file (raw bytes body, ≤ 32 MiB) |
 | `POST` | `/api/batch-add` | Scan `source_folder` and bulk-add all untracked top-level entries |
+| `POST` | `/api/file-upload/init` | Start a chunked file upload session |
+| `POST` | `/api/file-upload/chunk` | Upload one chunk (per-chunk SHA-256 validated before writing) |
+| `POST` | `/api/file-upload/finalize` | Finalise upload — full-file SHA-256 verified, file renamed to destination |
+| `DELETE` | `/api/file-upload/{upload_id}` | Cancel a chunked upload and remove the partial file |
+| `GET` | `/api/file-upload/{upload_id}/hash-progress` | Poll full-file hash verification progress (`bytes_done`, `total`, `percent`) |
 
 ---
 
@@ -386,6 +404,70 @@ In the **Add Torrent** dialog there is an upload icon next to the `.torrent` bro
 
 The returned path is filled into the `.torrent` field of the Add Torrent form automatically, ready to submit.
 
+### File / folder upload
+
+The **Upload Files** button opens an upload modal where you can pick individual files or entire folders to send directly to the server.
+
+**How it works:**
+
+1. The client calls `POST /api/file-upload/init` with the destination path, total file size, number of chunks, chunk size, and the full-file SHA-256 hash computed in the browser.
+2. The server pre-allocates the destination file (`<dest>.uploaded`) at the full size (BitTorrent-style allocation).
+3. Each chunk is uploaded via `POST /api/file-upload/chunk`. The server validates the chunk's SHA-256 before writing it at the correct byte offset — no write-back verify.
+4. After all chunks are sent the client calls `POST /api/file-upload/finalize`. The server streams the entire pre-allocated file through a SHA-256 hash and compares it with the client-supplied hash. On mismatch the partial file is deleted and an error is returned; on success the file is renamed to its final destination path.
+5. While finalization runs the client polls `GET /api/file-upload/{upload_id}/hash-progress` every 400 ms and displays a live "Verifying X%" progress bar.
+
+A **Include folder name** toggle (default on) controls whether the top-level folder name is included in the destination path when uploading a folder.
+
+---
+
+## Let's Encrypt auto-certificate
+
+BittSeeder can obtain and renew a [Let's Encrypt](https://letsencrypt.org) TLS certificate automatically using the **ACME HTTP-01** challenge — no manual certificate management required.
+
+### How to enable
+
+Set `letsencrypt_domain` and `letsencrypt_email` in your YAML config (or through **Settings → Security → Let's Encrypt** in the web UI):
+
+```yaml
+config:
+  web_port: 8443
+  letsencrypt_domain: myserver.example.com
+  letsencrypt_email:  admin@example.com
+  letsencrypt_http_port: 80   # omit to default to 80
+```
+
+That is all. Leave `web_cert` and `web_key` unset — BittSeeder fills them in automatically once the certificate is issued.
+
+### What happens
+
+1. **At startup** BittSeeder checks whether `bittseeder.crt` (written next to `config.yaml`) is missing or older than 60 days.
+2. If a certificate is needed, BittSeeder creates (or loads) an ACME account stored in `bittseeder-account.key` alongside the config.
+3. It starts a temporary HTTP server on `letsencrypt_http_port` (default `80`) to serve the ACME HTTP-01 challenge at `/.well-known/acme-challenge/<token>`.
+4. After Let's Encrypt validates the domain, BittSeeder finalises the order, downloads the certificate chain, and writes:
+   - `bittseeder.crt` — PEM certificate chain
+   - `bittseeder.key` — PEM private key
+5. The global config is updated (`web_cert` / `web_key` → these paths) and written back to disk.
+6. The web server hot-restarts to serve HTTPS with the new certificate — no manual restart needed.
+7. Every **12 hours** BittSeeder repeats the check. If the certificate is still fresh the check is a no-op; if not, it renews automatically.
+
+### Requirements
+
+- The domain must resolve to the machine running BittSeeder.
+- Port `80` (or the configured `letsencrypt_http_port`) must be reachable from the internet. If you run BittSeeder behind a reverse proxy, configure the proxy to forward port 80 to the challenge port, or use iptables to redirect it.
+- `web_cert` and `web_key` should be left unset when using Let's Encrypt — they are managed automatically.
+
+### Files written next to `config.yaml`
+
+| File | Contents |
+|---|---|
+| `bittseeder.crt` | PEM-encoded certificate chain (renewed every 60–90 days) |
+| `bittseeder.key` | PEM-encoded private key |
+| `bittseeder-account.key` | ACME account credentials (JSON) — keep this safe |
+
+### Certificate expiry in the web UI
+
+The **Settings → Security → Let's Encrypt** panel shows a read-only **Certificate Expires** date derived from the certificate file's modification time plus 90 days (the standard Let's Encrypt validity period).
+
 ---
 
 ## Thread count configuration
@@ -415,6 +497,22 @@ When a field is left blank (or the YAML key is absent) the runtime uses its defa
 | Serve both clients simultaneously | `both` | Yes | Yes |
 
 A torrent entry with `protocol: bt` in a `both`-mode YAML session still benefits from the shared BT listener — it just won't make RTC offers. Similarly, a `protocol: rtc` entry skips the BT registry entirely.
+
+---
+
+## Supported BEPs
+
+BittSeeder implements the following [BitTorrent Enhancement Proposals](https://www.bittorrent.org/beps/bep_0000.html):
+
+| BEP | Title | Notes |
+|---|---|---|
+| [BEP 3](https://www.bittorrent.org/beps/bep_0003.html) | The BitTorrent Protocol | Core wire protocol (handshake, BITFIELD, REQUEST, PIECE, CHOKE/UNCHOKE); HTTP tracker announce/stopped; v1 torrent metainfo format |
+| [BEP 9](https://www.bittorrent.org/beps/bep_0009.html) | Extension for Peers to Send Metadata Files | Magnet URI parsing — extracts info hash and tracker URLs from `magnet:?xt=urn:btih:…&tr=…`; peer metadata exchange (ut_metadata) is not implemented |
+| [BEP 12](https://www.bittorrent.org/beps/bep_0012.html) | Multitracker Metadata Extension | `announce-list` written to all generated `.torrent` files; all tracker tiers are announced in parallel |
+| [BEP 15](https://www.bittorrent.org/beps/bep_0015.html) | UDP Tracker Protocol | Full connect/announce/stopped lifecycle over UDP (`udp://` tracker URLs) |
+| [BEP 19](https://www.bittorrent.org/beps/bep_0019.html) | WebSeed (GetRight style) | `url-list` field written to generated `.torrent` files when `--webseed` / `webseed` entries are configured |
+| [BEP 23](https://www.bittorrent.org/beps/bep_0023.html) | Tracker Returns Compact Peer Lists | Always requests `compact=1`; parses 6-byte compact IPv4 peer entries (4-byte IP + 2-byte port) |
+| [BEP 52](https://www.bittorrent.org/beps/bep_0052.html) | The BitTorrent Protocol v2 | Full v2 torrent creation (SHA-256 piece hashing, per-file Merkle trees, `file tree` info structure); hybrid v1+v2 torrents; v2 magnet links (`xt=urn:btmh:1220…`) |
 
 ---
 
@@ -451,8 +549,9 @@ BittSeeder binary
 ├── torrent/                       .torrent build + parse (v1/v2/hybrid)
 │
 ├── tracker/
-│   ├── structs/bt_client.rs       BtTrackerClient { Http | Udp }
-│   └── structs/rtc_client.rs      RtcTrackerClient (HTTP-only + SDP offer)
+│   ├── structs/bt_client.rs              BtTrackerClient { Http | Udp }
+│   ├── structs/rtc_client.rs             RtcTrackerClient (HTTP-only + SDP offer)
+│   └── structs/rtc_announce_response.rs  RtcAnnounceResponse
 │
 ├── seeder/
 │   ├── seeder.rs                  BT wire handlers + RTC data channel handlers
@@ -462,6 +561,7 @@ BittSeeder binary
 │   └── impls/seeder.rs            run() — concurrent BT+RTC with watch-channel shutdown
 │
 └── web/
+    ├── acme.rs                    ACME HTTP-01 flow — Let's Encrypt auto-certificate
     ├── api.rs                     REST API + WebSocket + bearer token auth
     ├── server.rs                  Actix-web server + optional TLS
     └── index.html                 UI: charts, live log console, torrent management
@@ -485,4 +585,4 @@ run()
 
 ## License
 
-[AGPL-3.0](LICENSE) — © Jasper Lingers
+[MIT](LICENSE) — © Power2All

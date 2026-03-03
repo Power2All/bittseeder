@@ -56,6 +56,9 @@ argon2 = { version = "^0.5", features = ["password-hash"] }
 rpassword = "^7"
 actix-ws = "^0.4"
 futures-util = { version = "^0.3", default-features = false, features = ["std"] }
+anyhow = "^1"
+instant-acme = "^0.8"
+rcgen = { version = "^0.14", features = ["pem"] }
 
 [dev-dependencies]
 tempfile = "^3"

@@ -87,6 +87,85 @@
     html.dark-mode #browser-breadcrumb { color: #bbb; }
     html.dark-mode .ui.breadcrumb a { color: #6ab0e0; }
     html.dark-mode #console-output { background: #0a0e14; color: #b8c0ca; }
+    html.dark-mode .upload-file-item { border-bottom-color: #3d3d3d !important; color: #e0e0e0; }
+    html.dark-mode #u-file-list { border-color: #444 !important; }
+
+    #torrent-segment { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .detail-row td { background: #f8f8f9; }
+    html.dark-mode .detail-row td { background: #212223; }
+
+    #chart-grid > div { min-width: 0; }
+    #chart-section { overflow: hidden; }
+
+    @media (max-width: 991px) {
+      .ui.form .four.fields { flex-wrap: wrap !important; }
+      .ui.form .four.fields > .field { width: calc(50% - 1em) !important; box-sizing: border-box; }
+    }
+
+    @media (max-width: 1090px) {
+      #hamburger-btn { display: inline-flex !important; }
+      #header-actions {
+        display: none !important;
+        position: absolute;
+        top: calc(100% + 4px);
+        right: 0;
+        flex-direction: column;
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+        z-index: 1000;
+        min-width: 200px;
+        padding: 4px 0;
+        gap: 0 !important;
+      }
+      #header-actions.open { display: flex !important; }
+      #header-actions .ui.button {
+        display: flex;
+        width: 100% !important;
+        border-radius: 0 !important;
+        margin: 0 !important;
+        padding: 10px 16px !important;
+        justify-content: flex-start !important;
+        box-shadow: none !important;
+        background: transparent !important;
+        color: #333 !important;
+        border-bottom: 1px solid #f0f0f0 !important;
+      }
+      #header-actions .ui.button:last-child { border-bottom: none !important; }
+      #header-actions .ui.button:hover { background: #f8f8f8 !important; }
+      #header-actions .btn-label { display: inline !important; }
+      #header-actions .ui.button i.icon { margin-right: 8px !important; margin-left: 0 !important; }
+      html.dark-mode #header-actions { background: #27292a !important; border-color: #444 !important; }
+      html.dark-mode #header-actions .ui.button { color: #e0e0e0 !important; border-bottom-color: #3d3d3d !important; }
+      html.dark-mode #header-actions .ui.button:hover { background: #353637 !important; }
+    }
+
+    @media (max-width: 767px) {
+      body { padding: 8px; }
+
+      .header-row { flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+
+      #chart-grid { grid-template-columns: 1fr !important; }
+
+      .ui.form .four.fields,
+      .ui.form .three.fields,
+      .ui.form .two.fields { flex-direction: column !important; }
+      .ui.form .four.fields > .field,
+      .ui.form .three.fields > .field,
+      .ui.form .two.fields > .field { width: 100% !important; }
+
+      #login-box { width: calc(100% - 32px) !important; padding: 24px 16px; box-sizing: border-box; }
+
+      #console-output { height: 260px; }
+
+      .ui.modal { max-width: 98vw !important; }
+
+      #u-picker-row { flex-wrap: wrap; }
+
+      #settings-tabs { overflow-x: auto; flex-wrap: nowrap !important; }
+      #settings-tabs .item { white-space: nowrap; }
+    }
   </style>
 </head>
 <body>
@@ -118,27 +197,35 @@
         <div class="sub header" id="status-text">Loading…</div>
       </div>
     </h2>
-    <div style="display:flex;align-items:center;gap:6px">
+    <div style="display:flex;align-items:center;gap:6px;position:relative">
       <i id="theme-icon" class="adjust icon" style="opacity:0.6"></i>
       <select id="theme-select" onchange="setTheme(this.value)" title="Color theme">
         <option value="auto">Auto</option>
         <option value="light">Light</option>
         <option value="dark">Dark</option>
       </select>
-      <button class="ui icon button" title="Console Log" onclick="openConsole()">
-        <i class="terminal icon"></i> Console
-      </button>
-      <button class="ui icon button" title="Global Settings" onclick="openSettings()">
-        <i class="cog icon"></i> Settings
-      </button>
-      <button class="ui teal button" onclick="batchAdd()" title="Scan source folder and add all new items as torrents">
-        <i class="th list icon"></i>Batch Add
-      </button>
-      <button class="ui primary button" onclick="toggleAddForm()">
-        <i class="plus icon"></i>Add Torrent
-      </button>
-      <button class="ui basic button" onclick="doLogout()" id="logout-btn" style="display:none">
-        <i class="sign out icon"></i>Logout
+      <div id="header-actions" style="display:flex;align-items:center;gap:6px">
+        <button class="ui icon button" title="Console Log" onclick="openConsole()">
+          <i class="terminal icon"></i><span class="btn-label"> Console</span>
+        </button>
+        <button class="ui icon button" title="Global Settings" onclick="openSettings()">
+          <i class="cog icon"></i><span class="btn-label"> Settings</span>
+        </button>
+        <button class="ui violet button" onclick="openUploadModal()" title="Upload files or folders to the server">
+          <i class="upload icon"></i><span class="btn-label">Upload Files</span>
+        </button>
+        <button class="ui teal button" onclick="batchAdd()" title="Scan source folder and add all new items as torrents">
+          <i class="th list icon"></i><span class="btn-label">Batch Add</span>
+        </button>
+        <button class="ui primary button" onclick="toggleAddForm()">
+          <i class="plus icon"></i><span class="btn-label">Add Torrent</span>
+        </button>
+        <button class="ui basic button" onclick="doLogout()" id="logout-btn" style="display:none">
+          <i class="sign out icon"></i><span class="btn-label">Logout</span>
+        </button>
+      </div>
+      <button id="hamburger-btn" class="ui icon button" onclick="toggleMobileMenu()" style="display:none" title="Menu">
+        <i class="bars icon"></i>
       </button>
     </div>
   </div>
@@ -155,7 +242,7 @@
         <button class="ui button" onclick="setChartRange(72)">72h</button>
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    <div id="chart-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
       <div>
         <div style="font-size:0.82em;opacity:0.65;margin-bottom:4px;text-align:center;font-weight:600">
           <i class="users icon"></i>Peers
@@ -262,6 +349,59 @@
     </form>
   </div>
 
+  <div class="ui modal" id="upload-modal">
+    <div class="header"><i class="upload icon"></i> Upload Files to Server</div>
+    <div class="content" style="padding-bottom:16px">
+      <div id="u-select-section">
+        <div class="ui form" style="margin-bottom:12px">
+          <div class="field">
+            <label>Destination folder on server</label>
+            <div class="ui action input">
+              <input id="u-dest-folder" type="text" placeholder="/data/my-files">
+              <button class="ui icon button" type="button" title="Browse" onclick="openBrowser('u-dest-folder','dir')">
+                <i class="folder open icon"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div id="u-picker-row" style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <button class="ui button" type="button" onclick="document.getElementById('u-file-input').click()">
+            <i class="file outline icon"></i>Pick Files
+          </button>
+          <button class="ui button" type="button" onclick="document.getElementById('u-folder-input').click()">
+            <i class="folder icon"></i>Pick Folder
+          </button>
+          <label id="u-include-folder-label" style="display:flex;align-items:center;gap:5px;font-size:0.88em;cursor:pointer;color:#555;user-select:none" title="Include the picked folder name itself in the destination path">
+            <input type="checkbox" id="u-include-folder" checked onchange="uploadIncludeFolder=this.checked;renderUploadFileList()">
+            Include folder name
+          </label>
+          <span id="u-file-summary" style="color:#888;font-size:0.9em"></span>
+        </div>
+        <input id="u-file-input" type="file" multiple style="display:none" onchange="onUploadFilesSelected(this)">
+        <input id="u-folder-input" type="file" webkitdirectory style="display:none" onchange="onUploadFilesSelected(this)">
+        <div id="u-file-list" style="border:1px solid #ddd;border-radius:4px;max-height:280px;overflow-y:auto">
+          <div style="padding:16px;color:#999;text-align:center">No files selected</div>
+        </div>
+      </div>
+      <div id="u-progress-section" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span id="u-overall-label" style="font-weight:bold;font-size:0.9em">Preparing…</span>
+          <button class="ui mini red button" type="button" onclick="cancelUpload()">Stop</button>
+        </div>
+        <div style="background:#e0e0e0;border-radius:4px;height:8px;margin-bottom:14px;overflow:hidden">
+          <div id="u-overall-bar" style="height:100%;width:0%;background:#2185d0;transition:width 0.25s;border-radius:4px"></div>
+        </div>
+        <div id="u-progress-list" style="max-height:300px;overflow-y:auto"></div>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="u-btn-upload" class="ui primary button" onclick="startUpload()">
+        <i class="upload icon"></i>Upload
+      </button>
+      <button id="u-btn-close" class="ui button" onclick="$('#upload-modal').modal('hide')">Cancel</button>
+    </div>
+  </div>
+
   <div class="ui modal" id="file-browser-modal">
     <div class="header"><i class="folder open icon"></i> <span id="browser-title">Browse</span></div>
     <div class="content" style="padding-bottom:0">
@@ -286,6 +426,17 @@
         <i class="check icon"></i>Select This Folder
       </button>
       <button class="ui button" onclick="$('#file-browser-modal').modal('hide')">Cancel</button>
+    </div>
+  </div>
+
+  <div class="ui modal" id="error-modal">
+    <div class="header"><i class="exclamation triangle icon"></i> Error</div>
+    <div class="content" style="display:flex;align-items:center;gap:16px;padding:24px 16px">
+      <i class="exclamation circle icon" style="font-size:3em;color:#db2828;flex-shrink:0;line-height:1;vertical-align:middle"></i>
+      <p id="error-modal-msg" style="font-size:1.1em;word-break:break-word;margin:0;text-align:left"></p>
+    </div>
+    <div class="actions">
+      <button class="ui red button" onclick="$('#error-modal').modal('hide')"><i class="times icon"></i> Close</button>
     </div>
   </div>
 
@@ -426,6 +577,40 @@
             Password changes take effect immediately on save. TLS cert/key changes require a process restart.
             Sessions expire after 1 hour of inactivity.
           </div>
+          <h4 class="ui dividing header" style="margin-top:1.5em">
+            <i class="lock icon"></i>Let's Encrypt (Auto-Certificate)
+          </h4>
+          <div class="two fields">
+            <div class="field">
+              <label>Domain</label>
+              <input type="text" id="s-le-domain" placeholder="yourdomain.example.com">
+            </div>
+            <div class="field">
+              <label>Email</label>
+              <input type="text" id="s-le-email" placeholder="admin@example.com">
+            </div>
+          </div>
+          <div class="two fields">
+            <div class="field">
+              <label>HTTP Challenge Port (default 80)</label>
+              <input type="number" id="s-le-port" placeholder="80" min="1" max="65535">
+            </div>
+            <div class="field">
+              <label>Certificate Expires</label>
+              <div class="ui input">
+                <input type="text" id="s-le-expiry" readonly placeholder="(no certificate yet)"
+                       style="background:#f9f9f9;color:#555;cursor:default">
+              </div>
+            </div>
+          </div>
+          <div class="ui info message">
+            <i class="info circle icon"></i>
+            When <strong>Domain</strong> + <strong>Email</strong> are set, BittSeeder obtains and
+            auto-renews a Let's Encrypt certificate via HTTP-01 challenge. The cert/key path fields
+            above are set automatically — no manual configuration required.
+            The HTTP challenge port must be reachable from the internet on port 80
+            (use a reverse proxy or iptables redirect if needed).
+          </div>
         </div>
       </div>
 
@@ -482,24 +667,25 @@
     </div>
   </div>
 
-  <div class="ui segment">
-    <table class="ui celled table" id="torrent-table">
+  <div class="ui segment" id="torrent-segment">
+    <table class="ui celled unstackable table" id="torrent-table">
       <thead>
         <tr>
+          <th></th>
           <th>Name</th>
-          <th>Protocol</th>
-          <th>Version</th>
-          <th>Enabled</th>
-          <th>Upload Limit</th>
-          <th>Uploaded</th>
           <th>Peers</th>
+          <th>Uploaded</th>
           <th>Actions</th>
         </tr>
       </thead>
       <tbody id="torrent-tbody">
-        <tr><td colspan="8" class="center aligned">Loading…</td></tr>
+        <tr><td colspan="5" class="center aligned">Loading…</td></tr>
       </tbody>
     </table>
+  </div>
+
+  <div style="text-align:center;margin-top:24px;padding:12px 0;border-top:1px solid rgba(128,128,128,0.2);font-size:0.82em;color:#999">
+    Copyright &copy; 2024&ndash;2026 BittSeeder &amp; Power2All
   </div>
 </div>
 
@@ -533,6 +719,26 @@ function setTheme(theme) {
 window.matchMedia('(prefers-color-scheme:dark)').addEventListener('change', () => {
   const t = localStorage.getItem('seeder_theme') || 'auto';
   if (t === 'auto') { applyTheme('auto'); updateChartColors(); }
+});
+
+function toggleMobileMenu() {
+  document.getElementById('header-actions').classList.toggle('open');
+}
+
+function closeMobileMenu() {
+  document.getElementById('header-actions').classList.remove('open');
+}
+
+document.addEventListener('click', function(e) {
+  const menu = document.getElementById('header-actions');
+  const btn  = document.getElementById('hamburger-btn');
+  if (menu.classList.contains('open') && !menu.contains(e.target) && !btn.contains(e.target)) {
+    closeMobileMenu();
+  }
+});
+
+document.getElementById('header-actions').addEventListener('click', function(e) {
+  if (e.target.closest('button')) setTimeout(closeMobileMenu, 120);
 });
 
 function authHeaders() {
@@ -729,7 +935,7 @@ function disconnectWs() {
 }
 
 let chartPeers = null;
-let chartRate  = null;
+let chartRate = null;
 let wsData = [];
 let wsRange = 24;
 const WS_MAX_HOURS = 72;
@@ -737,10 +943,10 @@ const WS_MAX_HOURS = 72;
 function getChartColors() {
   const dark = document.documentElement.classList.contains('dark-mode');
   return {
-    peers: dark ? 'rgba(91, 192, 255, 0.9)'  : 'rgba(33, 133, 208, 0.9)',
-    rate:  dark ? 'rgba(0, 210, 150, 0.9)'   : 'rgba(33, 186, 69, 0.9)',
-    grid:  dark ? 'rgba(255,255,255,0.08)'   : 'rgba(0,0,0,0.07)',
-    text:  dark ? '#9aa'                      : '#666',
+    peers: dark ? 'rgba(91, 192, 255, 0.9)' : 'rgba(33, 133, 208, 0.9)',
+    rate: dark ? 'rgba(0, 210, 150, 0.9)' : 'rgba(33, 186, 69, 0.9)',
+    grid: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)',
+    text: dark ? '#9aa' : '#666',
   };
 }
 
@@ -829,16 +1035,16 @@ function applyColorsToChart(ch, borderColor, c) {
   ch.data.datasets[0].borderColor = borderColor;
   const opts = ch.options;
   opts.scales.x.ticks.color = c.text;
-  opts.scales.x.grid.color  = c.grid;
+  opts.scales.x.grid.color = c.grid;
   opts.scales.y.ticks.color = c.text;
-  opts.scales.y.grid.color  = c.grid;
+  opts.scales.y.grid.color = c.grid;
   ch.update('none');
 }
 
 function updateChartColors() {
   const c = getChartColors();
   applyColorsToChart(chartPeers, c.peers, c);
-  applyColorsToChart(chartRate,  c.rate,  c);
+  applyColorsToChart(chartRate, c.rate, c);
 }
 
 function downsample(arr, maxPoints) {
@@ -894,7 +1100,7 @@ function handleStatsMsg(msg) {
     renderTable();
   }
   document.getElementById('status-text').textContent =
-    'Peers: ' + msg.peers + '   Upload: ' + fmtBytes(msg.rate) + '/s';
+    'Peers: ' + msg.peers + ' Upload: ' + fmtBytes(msg.rate) + '/s';
 }
 
 let consoleLines = [];
@@ -949,7 +1155,7 @@ async function loadTorrents() {
   } catch(e) {
     if (e.message !== 'Unauthorized') {
       document.getElementById('torrent-tbody').innerHTML =
-        '<tr><td colspan="8" class="center aligned negative">Failed to load torrents: ' + e.message + '</td></tr>';
+        '<tr><td colspan="5" class="center aligned negative">Failed to load torrents: ' + e.message + '</td></tr>';
     }
   }
 }
@@ -971,7 +1177,7 @@ async function loadStats() {
 function renderTable() {
   if (torrents.length === 0) {
     document.getElementById('torrent-tbody').innerHTML =
-      '<tr><td colspan="8" class="center aligned">No torrents configured.</td></tr>';
+      '<tr><td colspan="5" class="center aligned">No torrents configured.</td></tr>';
     return;
   }
   let html = '';
@@ -989,13 +1195,14 @@ function renderTable() {
     const protoClass = proto === 'bt' ? 'proto-bt' : proto === 'rtc' ? 'proto-rtc' : 'proto-both';
     const protoLabel = `<span class="ui tiny label ${protoClass}">${escHtml(proto)}</span>`;
     html += `<tr style="${t.enabled ? '' : 'opacity:0.55'}">
+      <td style="width:1px;padding-right:0">
+        <button class="ui mini icon basic button" onclick="toggleDetail(${i})" title="Show details" style="padding:3px 6px">
+          <i id="expand-icon-${i}" class="chevron right icon" style="margin:0"></i>
+        </button>
+      </td>
       <td><strong>${escHtml(name)}</strong></td>
-      <td>${protoLabel}</td>
-      <td><span class="ui tiny label">${escHtml(version)}</span></td>
-      <td>${enabledLabel}</td>
-      <td>${limit}</td>
-      <td>${uploaded}</td>
       <td>${peers}</td>
+      <td>${uploaded}</td>
       <td>
         <button class="ui mini button" onclick="toggleEnabled(${i})">
           ${t.enabled ? 'Disable' : 'Enable'}
@@ -1004,9 +1211,29 @@ function renderTable() {
           <i class="trash icon"></i>Delete
         </button>
       </td>
+    </tr>
+    <tr id="detail-row-${i}" class="detail-row" style="display:none">
+      <td></td>
+      <td colspan="4">
+        <div style="display:flex;flex-wrap:wrap;gap:8px 24px;padding:4px 0;font-size:0.88em">
+          <span><strong>Protocol:</strong>&nbsp;${protoLabel}</span>
+          <span><strong>Version:</strong>&nbsp;<span class="ui tiny label">${escHtml(version)}</span></span>
+          <span><strong>Enabled:</strong>&nbsp;${enabledLabel}</span>
+          <span><strong>Upload Limit:</strong>&nbsp;${limit}</span>
+        </div>
+      </td>
     </tr>`;
   });
   document.getElementById('torrent-tbody').innerHTML = html;
+}
+
+function toggleDetail(i) {
+  const row  = document.getElementById('detail-row-' + i);
+  const icon = document.getElementById('expand-icon-' + i);
+  const open = row.style.display === 'none';
+  row.style.display = open ? '' : 'none';
+  icon.className = (open ? 'chevron down' : 'chevron right') + ' icon';
+  icon.style.margin = '0';
 }
 
 function toggleAddForm() {
@@ -1095,6 +1322,10 @@ async function openSettings() {
     document.getElementById('s-web-password').value = cfg.web_password || '';
     document.getElementById('s-web-cert').value = cfg.web_cert || '';
     document.getElementById('s-web-key').value = cfg.web_key || '';
+    document.getElementById('s-le-domain').value = cfg.letsencrypt_domain || '';
+    document.getElementById('s-le-email').value = cfg.letsencrypt_email || '';
+    document.getElementById('s-le-port').value = cfg.letsencrypt_http_port || '';
+    document.getElementById('s-le-expiry').value = cfg.le_cert_expiry || '';
     document.getElementById('s-log-level').value = cfg.log_level || 'info';
     document.getElementById('s-show-stats').checked = cfg.show_stats !== false;
     document.getElementById('s-seeder-threads').value = cfg.seeder_threads || '';
@@ -1155,6 +1386,9 @@ async function saveSettings() {
     seeder_threads: parseInt(document.getElementById('s-seeder-threads').value) || null,
     web_threads: parseInt(document.getElementById('s-web-threads').value) || null,
     source_folder: document.getElementById('s-source-folder').value.trim() || null,
+    letsencrypt_domain: document.getElementById('s-le-domain').value.trim() || null,
+    letsencrypt_email: document.getElementById('s-le-email').value.trim() || null,
+    letsencrypt_http_port: parseInt(document.getElementById('s-le-port').value) || null,
   };
   try {
     const r = await apiFetch('/api/config', {
@@ -1182,12 +1416,12 @@ $(document).ready(function() {
 });
 
 let browserTarget = null;
-let browserMode   = 'any';
-let browserPath   = '/';
+let browserMode = 'any';
+let browserPath = '/';
 
 function openBrowser(inputId, mode) {
   browserTarget = inputId;
-  browserMode   = mode;
+  browserMode = mode;
   const cur = document.getElementById(inputId).value.trim();
   let startPath = '';
   if (cur) {
@@ -1203,6 +1437,8 @@ function openBrowser(inputId, mode) {
     onHidden: function() {
       if (['s-web-cert','s-web-key','s-source-folder'].includes(browserTarget)) {
         $('#settings-modal').modal('show');
+      } else if (browserTarget === 'u-dest-folder') {
+        $('#upload-modal').modal('show');
       }
     }
   }).modal('show');
@@ -1317,15 +1553,246 @@ function browserSelectFolder() {
 }
 
 $(document).on('click', '.browser-item', function() {
-  const path  = this.dataset.path;
+  const path = this.dataset.path;
   const isDir = this.dataset.isdir === 'true';
-  const sel   = this.dataset.selectable !== 'false';
+  const sel = this.dataset.selectable !== 'false';
   if (isDir) {
     browserNavigate(path);
   } else if (sel) {
     browserSelectFile(path);
   }
 });
+
+let uploadFiles = [];
+let uploadCancelled = false;
+let uploadIncludeFolder = true;
+const UPLOAD_CHUNK_SIZE = 4 * 1024 * 1024;
+
+function effectiveRelPath(relPath) {
+  if (uploadIncludeFolder) return relPath;
+  const slash = relPath.indexOf('/');
+  return slash >= 0 ? relPath.slice(slash + 1) : relPath;
+}
+
+function openUploadModal() {
+  uploadFiles = [];
+  uploadCancelled = false;
+  uploadIncludeFolder = true;
+  document.getElementById('u-include-folder').checked = true;
+  document.getElementById('u-file-input').value = '';
+  document.getElementById('u-folder-input').value = '';
+  document.getElementById('u-file-summary').textContent = '';
+  showUploadPhase('select');
+  renderUploadFileList();
+  $('#upload-modal').modal('show');
+}
+
+function showUploadPhase(phase) {
+  document.getElementById('u-select-section').style.display = phase === 'select' ? '' : 'none';
+  document.getElementById('u-progress-section').style.display = phase === 'upload' ? '' : 'none';
+  document.getElementById('u-btn-upload').style.display = phase === 'select' ? '' : 'none';
+  document.getElementById('u-btn-close').textContent = phase === 'select' ? 'Cancel' : 'Close';
+}
+
+function onUploadFilesSelected(input) {
+  for (const file of input.files) {
+    const relPath = file.webkitRelativePath || file.name;
+    if (!uploadFiles.some(f => f.relPath === relPath)) {
+      uploadFiles.push({ file, relPath });
+    }
+  }
+  renderUploadFileList();
+}
+
+function uploadRemoveFile(idx) {
+  uploadFiles.splice(idx, 1);
+  renderUploadFileList();
+}
+
+function renderUploadFileList() {
+  const list = document.getElementById('u-file-list');
+  const summary = document.getElementById('u-file-summary');
+  if (uploadFiles.length === 0) {
+    list.innerHTML = '<div style="padding:16px;color:#999;text-align:center">No files selected</div>';
+    summary.textContent = '';
+    return;
+  }
+  const totalBytes = uploadFiles.reduce((s, f) => s + f.file.size, 0);
+  let html = '';
+  for (let i = 0; i < uploadFiles.length; i++) {
+    const { file, relPath } = uploadFiles[i];
+    const displayPath = effectiveRelPath(relPath);
+    html += `<div class="upload-file-item" style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid #f0f0f0">
+      <i class="file outline icon" style="color:#888;margin:0;flex-shrink:0"></i>
+      <span style="flex:1;word-break:break-all;font-size:0.88em">${escHtml(displayPath)}</span>
+      <span style="color:#aaa;font-size:0.82em;flex-shrink:0;margin-right:4px">${fmtBytes(file.size)}</span>
+      <button class="ui mini icon button" type="button" onclick="uploadRemoveFile(${i})" style="flex-shrink:0;padding:4px 6px"><i class="times icon" style="margin:0"></i></button>
+    </div>`;
+  }
+  list.innerHTML = html;
+  summary.textContent = `${uploadFiles.length} file${uploadFiles.length !== 1 ? 's' : ''} — ${fmtBytes(totalBytes)} total`;
+}
+
+async function sha256Hex(buffer) {
+  const hash = await crypto.subtle.digest('SHA-256', buffer);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function startUpload() {
+  const destBase = document.getElementById('u-dest-folder').value.trim();
+  if (!destBase) { alert('Please select a destination folder on the server.'); return; }
+  if (uploadFiles.length === 0) { alert('No files selected.'); return; }
+  uploadCancelled = false;
+  showUploadPhase('upload');
+  let html = '';
+  for (let i = 0; i < uploadFiles.length; i++) {
+    html += `<div style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:0.87em;margin-bottom:3px">
+        <span style="word-break:break-all;flex:1;margin-right:8px">${escHtml(uploadFiles[i].relPath)}</span>
+        <span id="u-lbl-${i}" style="flex-shrink:0;color:#888">Waiting…</span>
+      </div>
+      <div style="background:#e0e0e0;border-radius:4px;height:6px;overflow:hidden">
+        <div id="u-bar-${i}" style="height:100%;width:0%;background:#2185d0;transition:width 0.15s;border-radius:4px"></div>
+      </div>
+    </div>`;
+  }
+  document.getElementById('u-progress-list').innerHTML = html;
+  document.getElementById('u-overall-label').textContent = `0 / ${uploadFiles.length} files done`;
+  document.getElementById('u-overall-bar').style.cssText = 'height:100%;width:0%;background:#2185d0;transition:width 0.25s;border-radius:4px';
+  let done = 0;
+  for (let i = 0; i < uploadFiles.length; i++) {
+    const lbl = document.getElementById(`u-lbl-${i}`);
+    const bar = document.getElementById(`u-bar-${i}`);
+    if (uploadCancelled) {
+      lbl.textContent = 'Skipped';
+      lbl.style.color = '#aaa';
+      done++;
+      continue;
+    }
+    lbl.textContent = '0%';
+    lbl.style.color = '';
+    try {
+      await uploadSingleFile(uploadFiles[i].file, effectiveRelPath(uploadFiles[i].relPath), destBase,
+        pct => {
+          bar.style.width = (pct * 100).toFixed(1) + '%';
+          lbl.textContent = (pct * 100).toFixed(0) + '%';
+        },
+        pct => {
+          bar.style.background = '#f2711c';
+          bar.style.width = pct + '%';
+          lbl.textContent = 'Verifying ' + pct + '%';
+          lbl.style.color = '#f2711c';
+        });
+      bar.style.width = '100%';
+      bar.style.background = '#21ba45';
+      lbl.textContent = '✓ Done';
+      lbl.style.color = '#21ba45';
+    } catch (e) {
+      if (e.message === 'Cancelled') {
+        lbl.textContent = 'Cancelled';
+        lbl.style.color = '#aaa';
+      } else {
+        bar.style.background = '#db2828';
+        lbl.textContent = '✗ ' + e.message;
+        lbl.style.color = '#db2828';
+      }
+    }
+    done++;
+    document.getElementById('u-overall-label').textContent = `${done} / ${uploadFiles.length} files done`;
+    const overallBar = document.getElementById('u-overall-bar');
+    overallBar.style.width = ((done / uploadFiles.length) * 100) + '%';
+    if (done === uploadFiles.length && !uploadCancelled) {
+      overallBar.style.background = '#21ba45';
+    }
+  }
+  if (uploadCancelled) {
+    document.getElementById('u-overall-label').textContent = 'Upload stopped.';
+  }
+}
+
+async function uploadSingleFile(file, relPath, destBase, onProgress, onHashProgress) {
+  const dest = destBase.replace(/\/+$/, '') + '/' + relPath;
+  const totalChunks = Math.max(1, Math.ceil(file.size / UPLOAD_CHUNK_SIZE));
+  const fileSha256 = await sha256Hex(await file.arrayBuffer());
+  const initR = await apiFetch('/api/file-upload/init', {
+    method: 'POST',
+    body: JSON.stringify({ dest, size: file.size, chunks: totalChunks, chunk_size: UPLOAD_CHUNK_SIZE, file_sha256: fileSha256 }),
+  });
+  if (!initR.ok) throw new Error(await initR.text());
+  const { upload_id } = await initR.json();
+  try {
+    for (let i = 0; i < totalChunks; i++) {
+      if (uploadCancelled) {
+        await apiFetch(`/api/file-upload/${encodeURIComponent(upload_id)}`, { method: 'DELETE' }).catch(() => {});
+        throw new Error('Cancelled');
+      }
+      const start = i * UPLOAD_CHUNK_SIZE;
+      const chunkBuf = await file.slice(start, Math.min(start + UPLOAD_CHUNK_SIZE, file.size)).arrayBuffer();
+      const sha256 = await sha256Hex(chunkBuf);
+      let lastErr = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const r = await apiFetchBinary(
+          `/api/file-upload/chunk?id=${encodeURIComponent(upload_id)}&n=${i}&sha256=${sha256}`,
+          chunkBuf,
+        );
+        if (r.ok) { lastErr = null; break; }
+        lastErr = await r.text();
+      }
+      if (lastErr) throw new Error(`Chunk ${i}: ${lastErr}`);
+      onProgress((i + 1) / totalChunks);
+    }
+  } catch (e) {
+    await apiFetch(`/api/file-upload/${encodeURIComponent(upload_id)}`, { method: 'DELETE' }).catch(() => {});
+    throw e;
+  }
+  onHashProgress(0);
+  let polling = true;
+  (async () => {
+    while (polling) {
+      await new Promise(r => setTimeout(r, 400));
+      if (!polling) break;
+      try {
+        const pr = await apiFetch(`/api/file-upload/${encodeURIComponent(upload_id)}/hash-progress`);
+        if (pr.ok) {
+          const { percent } = await pr.json();
+          onHashProgress(percent);
+        }
+      } catch (_) {}
+    }
+  })();
+  try {
+    const finR = await apiFetch('/api/file-upload/finalize', {
+      method: 'POST',
+      body: JSON.stringify({ upload_id }),
+    });
+    if (!finR.ok) {
+      const err = await finR.json().catch(() => ({}));
+      throw new Error(err.error || 'Finalize failed');
+    }
+    return finR.json();
+  } finally {
+    polling = false;
+  }
+}
+
+async function apiFetchBinary(url, body) {
+  const headers = { 'Content-Type': 'application/octet-stream' };
+  if (authToken) headers['Authorization'] = 'Bearer ' + authToken;
+  const r = await fetch(url, { method: 'POST', headers, body });
+  if (r.status === 401) {
+    authToken = null;
+    localStorage.removeItem('seeder_token');
+    disconnectWs();
+    showLogin();
+    throw new Error('Unauthorized');
+  }
+  return r;
+}
+
+function cancelUpload() {
+  uploadCancelled = true;
+  document.getElementById('u-overall-label').textContent = 'Stopping after current chunk…';
+}
 
 async function uploadTorrentFile() {
   const fileInput = document.getElementById('f-torrent-upload');
@@ -1359,6 +1826,11 @@ async function uploadTorrentFile() {
   fileInput.value = '';
 }
 
+function showError(msg) {
+  document.getElementById('error-modal-msg').textContent = msg;
+  $('#error-modal').modal('show');
+}
+
 async function batchAdd() {
   try {
     const r = await apiFetch('/api/batch-add', { method: 'POST' });
@@ -1368,7 +1840,7 @@ async function batchAdd() {
         const msg = result.skipped > 0
           ? `No new items found — ${result.skipped} already tracked.`
           : 'Source folder is empty or has no new items.';
-        alert(msg);
+        showError(msg);
       } else {
         document.getElementById('status-text').textContent =
           `Batch add: ${result.added} new torrent(s) added, ${result.skipped} already tracked — reloading…`;
@@ -1377,10 +1849,10 @@ async function batchAdd() {
     } else {
       let msg;
       try { msg = (await r.json()).error; } catch { msg = await r.text(); }
-      alert('Batch add failed: ' + msg);
+      showError('Batch add failed: ' + msg);
     }
   } catch(e) {
-    if (e.message !== 'Unauthorized') alert('Error: ' + e.message);
+    if (e.message !== 'Unauthorized') showError('Error: ' + e.message);
   }
 }
 </script>

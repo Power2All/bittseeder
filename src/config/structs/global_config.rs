@@ -23,4 +23,7 @@ pub struct GlobalConfig {
     pub web_threads: Option<usize>,
     pub seeder_threads: Option<usize>,
     pub source_folder: Option<std::path::PathBuf>,
+    pub letsencrypt_domain: Option<String>,
+    pub letsencrypt_email: Option<String>,
+    pub letsencrypt_http_port: Option<u16>,
 }

@@ -24,6 +24,10 @@ use std::path::{
     PathBuf
 };
 use std::sync::Arc;
+use std::sync::atomic::{
+    AtomicBool,
+    Ordering
+};
 use std::time::SystemTime;
 use tokio::sync::broadcast;
 use tokio::sync::RwLock;
@@ -597,12 +601,15 @@ async fn run_torrents_mode(
     let cli_web_cert     = cli_web.cert_path.clone();
     let cli_web_key      = cli_web.key_path.clone();
     let mut current_web_threads = yaml_for_web.config.web_threads;
+    let mut current_web_cert: Option<PathBuf> = cli_web_cert.clone().or_else(|| yaml_for_web.config.web_cert.clone());
+    let mut current_web_key:  Option<PathBuf> = cli_web_key.clone().or_else(|| yaml_for_web.config.web_key.clone());
     let initial_web_cfg = WebConfig {
         port: cli_web_port,
         password: cli_web_password.clone().or_else(|| yaml_for_web.config.web_password.clone()),
-        cert_path: cli_web_cert.clone().or_else(|| yaml_for_web.config.web_cert.clone()),
-        key_path:  cli_web_key.clone().or_else(|| yaml_for_web.config.web_key.clone()),
+        cert_path: current_web_cert.clone(),
+        key_path:  current_web_key.clone(),
     };
+    let force_web_restart = Arc::new(AtomicBool::new(false));
     let mut web_server_info = spawn_web_server(web::server::WebServerParams {
         config: initial_web_cfg,
         web_threads: current_web_threads,
@@ -613,6 +620,51 @@ async fn run_torrents_mode(
         log_tx: log_tx.clone(),
         log_buffer: std::sync::Arc::clone(&log_buffer),
     }).await;
+    {
+        let shared_file_acme = Arc::clone(&shared_file);
+        let reload_tx_acme = reload_tx.clone();
+        let yaml_path_acme = yaml_path.clone();
+        let force_restart = Arc::clone(&force_web_restart);
+        tokio::spawn(async move {
+            use tokio::time::{interval, Duration, MissedTickBehavior};
+            let mut ticker = interval(Duration::from_secs(12 * 3600));
+            ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+            loop {
+                ticker.tick().await;
+                let cfg = shared_file_acme.read().await.config.clone();
+                if let (Some(domain), Some(email)) = (cfg.letsencrypt_domain, cfg.letsencrypt_email) {
+                    let http_port = cfg.letsencrypt_http_port.unwrap_or(80);
+                    let yaml_dir = yaml_path_acme.parent()
+                        .unwrap_or(std::path::Path::new("."))
+                        .to_path_buf();
+                    let cert_path = yaml_dir.join("bittseeder.crt");
+                    let key_path = yaml_dir.join("bittseeder.key");
+                    let acct_path = yaml_dir.join("bittseeder-account.key");
+                    match web::acme::ensure_certificate(
+                        &domain, &email, http_port, &cert_path, &key_path, &acct_path,
+                    ).await {
+                        Ok(true) => {
+                            log::info!("[ACME] Certificate renewed for {} — restarting web server…", domain);
+                            {
+                                let mut f = shared_file_acme.write().await;
+                                f.config.web_cert = Some(cert_path.clone());
+                                f.config.web_key = Some(key_path.clone());
+                                let s = serde_yaml::to_string(&*f).ok();
+                                drop(f);
+                                if let Some(s) = s {
+                                    std::fs::write(&yaml_path_acme, s).ok();
+                                }
+                            }
+                            force_restart.store(true, Ordering::Release);
+                            let _ = reload_tx_acme.send(());
+                        }
+                        Ok(false) => log::debug!("[ACME] Certificate still valid, no renewal needed"),
+                        Err(e) => log::error!("[ACME] Certificate renewal failed: {}", e),
+                    }
+                }
+            }
+        });
+    }
     loop {
         let (file, entries) = match load_yaml_entries(&yaml_path, cli_proxy.as_ref(), cli_upnp, cli_protocol) {
             Ok(e) => e,
@@ -631,10 +683,55 @@ async fn run_torrents_mode(
             }))
         );
         let new_seeder_threads = file.config.seeder_threads;
-        let new_web_threads    = file.config.web_threads;
+        let new_web_threads = file.config.web_threads;
+        let new_web_cert: Option<PathBuf> = cli_web_cert.clone().or_else(|| file.config.web_cert.clone());
+        let new_web_key:  Option<PathBuf> = cli_web_key.clone().or_else(|| file.config.web_key.clone());
         {
             let mut sf = shared_file.write().await;
             *sf = file;
+        }
+        let force_restart = force_web_restart.swap(false, Ordering::AcqRel);
+        if new_web_threads != current_web_threads
+            || new_web_cert != current_web_cert
+            || new_web_key != current_web_key
+            || force_restart
+        {
+            let reason = if new_web_threads != current_web_threads {
+                format!(
+                    "thread count ({} → {})",
+                    current_web_threads.map(|n| n.to_string()).unwrap_or_else(|| "auto".to_string()),
+                    new_web_threads.map(|n| n.to_string()).unwrap_or_else(|| "auto".to_string()),
+                )
+            } else if force_restart || new_web_cert != current_web_cert || new_web_key != current_web_key {
+                "TLS certificate/key changed".to_string()
+            } else {
+                "configuration changed".to_string()
+            };
+            log::info!("[Web] {} — restarting web server…", reason);
+            if let Some((old_thread, old_handle)) = web_server_info.take() {
+                old_handle.stop(true).await;
+                tokio::task::spawn_blocking(move || { let _ = old_thread.join(); }).await.ok();
+            }
+            let cfg_now = shared_file.read().await.config.clone();
+            let new_web_cfg = WebConfig {
+                port: cli_web_port,
+                password: cli_web_password.clone().or_else(|| cfg_now.web_password.clone()),
+                cert_path: new_web_cert.clone(),
+                key_path:  new_web_key.clone(),
+            };
+            web_server_info = spawn_web_server(web::server::WebServerParams {
+                config: new_web_cfg,
+                web_threads: new_web_threads,
+                yaml_path: yaml_path.clone(),
+                shared_file: Arc::clone(&shared_file),
+                stats: Arc::clone(&shared_stats),
+                reload_tx: reload_tx.clone(),
+                log_tx: log_tx.clone(),
+                log_buffer: std::sync::Arc::clone(&log_buffer),
+            }).await;
+            current_web_threads = new_web_threads;
+            current_web_cert = new_web_cert;
+            current_web_key = new_web_key;
         }
         let seeder_rt = build_seeder_runtime(new_seeder_threads);
         {
@@ -738,36 +835,6 @@ async fn run_torrents_mode(
             println!("[BittSeeder] Shutting down.");
             break;
         }
-        if new_web_threads != current_web_threads {
-            log::info!(
-                "[Web] Thread count changed ({} → {}), restarting web server…",
-                current_web_threads.map(|n| n.to_string()).unwrap_or_else(|| "auto".to_string()),
-                new_web_threads.map(|n| n.to_string()).unwrap_or_else(|| "auto".to_string()),
-            );
-            if let Some((old_thread, old_handle)) = web_server_info.take() {
-                old_handle.stop(true).await;
-                tokio::task::spawn_blocking(move || { let _ = old_thread.join(); }).await.ok();
-            }
-            let cfg_now = shared_file.read().await.config.clone();
-            let new_web_cfg = WebConfig {
-                port: cli_web_port,
-                password: cli_web_password.clone().or_else(|| cfg_now.web_password.clone()),
-                cert_path: cli_web_cert.clone().or_else(|| cfg_now.web_cert.clone()),
-                key_path:  cli_web_key.clone().or_else(|| cfg_now.web_key.clone()),
-            };
-            web_server_info = spawn_web_server(web::server::WebServerParams {
-                config: new_web_cfg,
-                web_threads: new_web_threads,
-                yaml_path: yaml_path.clone(),
-                shared_file: Arc::clone(&shared_file),
-                stats: Arc::clone(&shared_stats),
-                reload_tx: reload_tx.clone(),
-                log_tx: log_tx.clone(),
-                log_buffer: std::sync::Arc::clone(&log_buffer),
-            }).await;
-            current_web_threads = new_web_threads;
-        }
-
         println!("[BittSeeder] Applying new config…\n");
     }
 }

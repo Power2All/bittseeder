@@ -3,6 +3,7 @@ use crate::config::structs::torrent_entry::TorrentEntry;
 use crate::config::structs::torrents_file::TorrentsFile;
 use crate::stats::shared_stats::SharedStats;
 use crate::web::structs::app_state::AppState;
+use crate::web::structs::upload_session::UploadSession;
 use actix_web::{
     web::{
         Bytes,
@@ -14,6 +15,10 @@ use actix_web::{
     },
     HttpRequest,
     HttpResponse,
+};
+use sha2::{
+    Digest,
+    Sha256,
 };
 use argon2::{
     Argon2,
@@ -29,6 +34,7 @@ use std::collections::{
 };
 use std::io;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{
     Duration,
     Instant
@@ -261,10 +267,10 @@ async fn ws_loop(
                 last_uploaded = total_uploaded;
                 last_tick = Instant::now();
                 let msg = serde_json::to_string(&json!({
-                    "type":     "stats",
-                    "ts":       ts,
-                    "peers":    total_peers,
-                    "rate":     rate,
+                    "type": "stats",
+                    "ts": ts,
+                    "peers": total_peers,
+                    "rate": rate,
                     "torrents": torrents_map,
                 })).unwrap_or_default();
                 if session.text(msg).await.is_err() { break; }
@@ -387,7 +393,27 @@ pub async fn get_config(req: HttpRequest, data: Data<AppState>) -> HttpResponse 
         return HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}));
     }
     let file = data.shared_file.read().await;
-    HttpResponse::Ok().json(&file.config)
+    let mut config_json = match serde_json::to_value(&file.config) {
+        Ok(v) => v,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+    drop(file);
+    let cert_path = data.yaml_path.parent()
+        .unwrap_or(std::path::Path::new("."))
+        .join("bittseeder.crt");
+    if cert_path.exists()
+        && let Ok(meta) = std::fs::metadata(&cert_path)
+        && let Ok(modified) = meta.modified()
+    {
+        use chrono::{DateTime, Utc};
+        let expiry_time = modified + std::time::Duration::from_secs(90 * 24 * 3600);
+        let dt: DateTime<Utc> = DateTime::from(expiry_time);
+        let expiry_str = dt.format("%Y-%m-%d").to_string();
+        if let serde_json::Value::Object(ref mut map) = config_json {
+            map.insert("le_cert_expiry".to_string(), serde_json::Value::String(expiry_str));
+        }
+    }
+    HttpResponse::Ok().json(config_json)
 }
 
 pub async fn update_config(req: HttpRequest, data: Data<AppState>, body: Json<GlobalConfig>) -> HttpResponse {
@@ -398,10 +424,10 @@ pub async fn update_config(req: HttpRequest, data: Data<AppState>, body: Json<Gl
     if let Some(ref level_str) = new_cfg.log_level {
         let filter = match level_str.to_ascii_lowercase().as_str() {
             "error" => log::LevelFilter::Error,
-            "warn"  => log::LevelFilter::Warn,
+            "warn" => log::LevelFilter::Warn,
             "debug" => log::LevelFilter::Debug,
             "trace" => log::LevelFilter::Trace,
-            _       => log::LevelFilter::Info,
+            _ => log::LevelFilter::Info,
         };
         log::set_max_level(filter);
         log::info!("[Config] Log level set to {}", level_str);
@@ -553,4 +579,234 @@ pub async fn batch_add(req: HttpRequest, data: Data<AppState>) -> HttpResponse {
     }
     log::info!("[Web] Batch add: {} added, {} skipped", added, skipped);
     HttpResponse::Ok().json(json!({ "added": added, "skipped": skipped }))
+}
+
+#[derive(Deserialize)]
+pub struct FileUploadInitRequest {
+    pub dest: String,
+    pub size: u64,
+    pub chunks: u32,
+    pub chunk_size: u64,
+    pub file_sha256: String,
+}
+
+pub async fn file_upload_init(
+    req: HttpRequest,
+    data: Data<AppState>,
+    body: Json<FileUploadInitRequest>,
+) -> HttpResponse {
+    if !is_authenticated(&req, &data).await {
+        return HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}));
+    }
+    if body.chunks == 0 {
+        return HttpResponse::BadRequest().json(json!({"error": "chunks must be > 0"}));
+    }
+    if body.chunk_size == 0 {
+        return HttpResponse::BadRequest().json(json!({"error": "chunk_size must be > 0"}));
+    }
+    let dest = std::path::PathBuf::from(&body.dest);
+    let mut part_path_os = dest.clone().into_os_string();
+    part_path_os.push(".uploaded");
+    let part_path = std::path::PathBuf::from(part_path_os);
+    let size = body.size;
+    let part_path_c = part_path.clone();
+    let dest_c = dest.clone();
+    let prepare = move || -> io::Result<()> {
+        if let Some(parent) = dest_c.parent()
+            && !parent.as_os_str().is_empty()
+            && let Err(e) = std::fs::create_dir_all(parent)
+        {
+            return Err(e);
+        }
+        let file = std::fs::File::create(&part_path_c)?;
+        file.set_len(size)?;
+        Ok(())
+    };
+    match tokio::task::spawn_blocking(prepare).await {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => return HttpResponse::InternalServerError()
+            .body(format!("Failed to prepare upload file: {}", e)),
+        Err(e) => return HttpResponse::InternalServerError()
+            .body(format!("Task error: {}", e)),
+    }
+    let upload_id = generate_token();
+    let session = UploadSession {
+        dest,
+        total_chunks: body.chunks,
+        file_size: body.size,
+        file_sha256: body.file_sha256.clone(),
+        received: std::collections::BTreeSet::new(),
+        part_path,
+        chunk_size: body.chunk_size,
+        hash_bytes_done: Arc::new(AtomicU64::new(0)),
+    };
+    data.uploads.lock().await.insert(upload_id.clone(), session);
+    log::info!("[Web] File upload started: {} ({} chunks)", body.dest, body.chunks);
+    HttpResponse::Ok().json(json!({"upload_id": upload_id}))
+}
+
+#[derive(Deserialize)]
+pub struct FileUploadChunkQuery {
+    pub id: String,
+    pub n: u32,
+    pub sha256: String,
+}
+
+pub async fn file_upload_chunk(
+    req: HttpRequest,
+    data: Data<AppState>,
+    query: Query<FileUploadChunkQuery>,
+    body: Bytes,
+) -> HttpResponse {
+    if !is_authenticated(&req, &data).await {
+        return HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}));
+    }
+    let computed = hex::encode(Sha256::digest(&body));
+    if computed != query.sha256 {
+        return HttpResponse::BadRequest().json(json!({
+            "error": format!("SHA-256 mismatch on chunk {}: expected {}, got {}", query.n, query.sha256, computed)
+        }));
+    }
+    let (part_path, chunk_size, total_chunks) = {
+        let uploads = data.uploads.lock().await;
+        let session = match uploads.get(&query.id) {
+            Some(s) => s,
+            None => return HttpResponse::NotFound().json(json!({"error": "Unknown upload ID"})),
+        };
+        if query.n >= session.total_chunks {
+            return HttpResponse::BadRequest().json(json!({
+                "error": format!("Chunk index {} out of range (total {})", query.n, session.total_chunks)
+            }));
+        }
+        (session.part_path.clone(), session.chunk_size, session.total_chunks)
+    };
+    let n = query.n;
+    let offset = n as u64 * chunk_size;
+    let write = move || -> io::Result<()> {
+        use std::io::{Seek, SeekFrom, Write};
+        let mut file = std::fs::OpenOptions::new().write(true).open(&part_path)?;
+        file.seek(SeekFrom::Start(offset))?;
+        file.write_all(&body)?;
+        Ok(())
+    };
+    match tokio::task::spawn_blocking(write).await {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => return HttpResponse::InternalServerError()
+            .body(format!("Failed to write chunk: {}", e)),
+        Err(e) => return HttpResponse::InternalServerError()
+            .body(format!("Task error: {}", e)),
+    }
+    let mut uploads = data.uploads.lock().await;
+    let session = match uploads.get_mut(&query.id) {
+        Some(s) => s,
+        None => return HttpResponse::NotFound().json(json!({"error": "Unknown upload ID"})),
+    };
+    session.received.insert(n);
+    let received = session.received.len() as u32;
+    HttpResponse::Ok().json(json!({"ok": true, "received": received, "total": total_chunks}))
+}
+
+#[derive(Deserialize)]
+pub struct FileUploadFinalizeRequest {
+    pub upload_id: String,
+}
+
+pub async fn file_upload_finalize(
+    req: HttpRequest,
+    data: Data<AppState>,
+    body: Json<FileUploadFinalizeRequest>,
+) -> HttpResponse {
+    if !is_authenticated(&req, &data).await {
+        return HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}));
+    }
+    let (dest, part_path, file_sha256, hash_progress) = {
+        let uploads = data.uploads.lock().await;
+        let session = match uploads.get(&body.upload_id) {
+            Some(s) => s,
+            None => return HttpResponse::NotFound().json(json!({"error": "Unknown upload ID"})),
+        };
+        let expected: std::collections::BTreeSet<u32> = (0..session.total_chunks).collect();
+        if session.received != expected {
+            let missing: Vec<u32> = expected.difference(&session.received).cloned().collect();
+            return HttpResponse::BadRequest().json(json!({
+                "error": "Missing chunks",
+                "missing": missing,
+            }));
+        }
+        (
+            session.dest.clone(),
+            session.part_path.clone(),
+            session.file_sha256.clone(),
+            Arc::clone(&session.hash_bytes_done),
+        )
+    };
+    let dest_log = dest.clone();
+    let finalize = move || -> io::Result<String> {
+        use std::io::Read;
+        let mut file = std::fs::File::open(&part_path)?;
+        let mut hasher = Sha256::new();
+        let mut buf = vec![0u8; 1024 * 1024];
+        loop {
+            let n = file.read(&mut buf)?;
+            if n == 0 { break; }
+            hasher.update(&buf[..n]);
+            hash_progress.fetch_add(n as u64, Ordering::Relaxed);
+        }
+        let computed = hex::encode(hasher.finalize());
+        if computed != file_sha256 {
+            let _ = std::fs::remove_file(&part_path);
+            return Err(io::Error::other(format!(
+                "Integrity check failed: expected SHA-256 {file_sha256}, computed {computed}"
+            )));
+        }
+        std::fs::rename(&part_path, &dest)?;
+        Ok(computed)
+    };
+    let hash_result = tokio::task::spawn_blocking(finalize).await;
+    data.uploads.lock().await.remove(&body.upload_id);
+    let sha256 = match hash_result {
+        Ok(Ok(h)) => h,
+        Ok(Err(e)) => return HttpResponse::InternalServerError().body(e.to_string()),
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+    log::info!("[Web] File upload finalised: {} (sha256: {})", dest_log.display(), sha256);
+    HttpResponse::Ok().json(json!({"ok": true, "sha256": sha256}))
+}
+
+pub async fn file_upload_cancel(
+    req: HttpRequest,
+    data: Data<AppState>,
+    upload_id: Path<String>,
+) -> HttpResponse {
+    if !is_authenticated(&req, &data).await {
+        return HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}));
+    }
+    let mut uploads = data.uploads.lock().await;
+    if let Some(session) = uploads.remove(upload_id.as_str()) {
+        let _ = std::fs::remove_file(&session.part_path);
+    }
+    HttpResponse::Ok().json(json!({"ok": true}))
+}
+
+pub async fn file_upload_hash_progress(
+    req: HttpRequest,
+    data: Data<AppState>,
+    upload_id: Path<String>,
+) -> HttpResponse {
+    if !is_authenticated(&req, &data).await {
+        return HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}));
+    }
+    let uploads = data.uploads.lock().await;
+    let session = match uploads.get(upload_id.as_str()) {
+        Some(s) => s,
+        None => return HttpResponse::NotFound().json(json!({"error": "Unknown upload ID"})),
+    };
+    let bytes_done = session.hash_bytes_done.load(Ordering::Relaxed);
+    let total = session.file_size;
+    let percent = if total > 0 {
+        ((bytes_done as f64 / total as f64) * 100.0) as u32
+    } else {
+        100
+    };
+    HttpResponse::Ok().json(json!({ "bytes_done": bytes_done, "total": total, "percent": percent }))
 }
