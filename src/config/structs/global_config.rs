@@ -26,4 +26,6 @@ pub struct GlobalConfig {
     pub letsencrypt_domain: Option<String>,
     pub letsencrypt_email: Option<String>,
     pub letsencrypt_http_port: Option<u16>,
+    pub web_login_rate_limit: Option<u32>,
+    pub totp_secret: Option<String>,
 }

@@ -181,6 +181,11 @@
         <label>Password</label>
         <input type="password" id="login-password" placeholder="Enter password" autofocus>
       </div>
+      <div class="field" id="totp-field" style="display:none">
+        <label>Authenticator Code</label>
+        <input type="text" id="login-totp" placeholder="6-digit code"
+               maxlength="6" inputmode="numeric" autocomplete="one-time-code">
+      </div>
       <div id="login-error" style="color:#c00;margin:8px 0;display:none"></div>
       <button class="ui fluid primary button" onclick="doLogin()">
         <i class="sign in icon"></i>Login
@@ -559,6 +564,10 @@
             <input type="password" id="s-web-password" placeholder="(no password)">
           </div>
           <div class="field">
+            <label>Login Rate Limit (attempts per minute per IP, 0 = disabled)</label>
+            <input type="number" id="s-login-rate-limit" placeholder="10" min="0" max="1000">
+          </div>
+          <div class="field">
             <label>TLS Certificate (.pem) — requires restart to take effect</label>
             <div class="ui action input">
               <input type="text" id="s-web-cert" placeholder="/path/to/cert.pem">
@@ -611,6 +620,16 @@
             The HTTP challenge port must be reachable from the internet on port 80
             (use a reverse proxy or iptables redirect if needed).
           </div>
+          <h4 class="ui dividing header" style="margin-top:1.5em">
+            <i class="mobile alternate icon"></i>Two-Factor Authentication (TOTP)
+          </h4>
+          <div id="totp-status-msg" class="ui message" style="margin-bottom:.8em"></div>
+          <button class="ui blue button" id="btn-2fa-enable" onclick="open2FASetup()" style="display:none">
+            <i class="qrcode icon"></i> Enable 2FA
+          </button>
+          <button class="ui red button" id="btn-2fa-disable" onclick="disable2FA()" style="display:none">
+            <i class="times circle icon"></i> Disable 2FA
+          </button>
         </div>
       </div>
 
@@ -667,6 +686,34 @@
     </div>
   </div>
 
+  <div class="ui small modal" id="twofa-modal">
+    <div class="header"><i class="mobile alternate icon"></i> Enable Two-Factor Authentication</div>
+    <div class="content">
+      <p>Scan the QR code with <strong>Google Authenticator</strong>, Authy, or any TOTP-compatible app,
+         then enter the 6-digit code to confirm.</p>
+      <div style="text-align:center;margin:16px 0">
+        <div id="twofa-qr-canvas" style="display:inline-block"></div>
+      </div>
+      <p style="text-align:center;font-size:.85em">
+        Manual key: <code id="twofa-secret-text" style="word-break:break-all"></code>
+      </p>
+      <div class="ui form">
+        <div class="field">
+          <label>Confirmation Code</label>
+          <input type="text" id="twofa-confirm-code" placeholder="6-digit code"
+                 maxlength="6" inputmode="numeric" autocomplete="one-time-code">
+        </div>
+        <div id="twofa-error" style="color:#c00;margin-top:6px;display:none"></div>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="ui green button" onclick="confirm2FA()">
+        <i class="check icon"></i> Activate 2FA
+      </button>
+      <button class="ui button" onclick="$('#twofa-modal').modal('hide')">Cancel</button>
+    </div>
+  </div>
+
   <div class="ui segment" id="torrent-segment">
     <table class="ui celled unstackable table" id="torrent-table">
       <thead>
@@ -693,6 +740,7 @@
 <script src="https://cdn.jsdelivr.net/npm/semantic-ui@2.5.0/dist/semantic.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script>
 let torrents = [];
 let stats = {};
@@ -760,13 +808,15 @@ async function apiFetch(url, opts = {}) {
   return r;
 }
 
-function showLogin() {
+async function showLogin() {
+  await loadAuthInfo();
   const overlay = document.getElementById('login-overlay');
   const alreadyVisible = overlay.style.display === 'flex';
   overlay.style.display = 'flex';
   document.getElementById('main-app').style.display = 'none';
   if (!alreadyVisible) {
     document.getElementById('login-password').value = '';
+    document.getElementById('login-totp').value = '';
     document.getElementById('login-error').style.display = 'none';
     setTimeout(() => document.getElementById('login-password').focus(), 100);
   }
@@ -783,11 +833,12 @@ function showApp() {
 
 async function doLogin() {
   const pw = document.getElementById('login-password').value;
+  const totp = document.getElementById('login-totp').value.trim();
   try {
     const r = await fetch('/api/login', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({password: pw}),
+      body: JSON.stringify({password: pw, totp_code: totp || null}),
     });
     if (r.ok) {
       const data = await r.json();
@@ -797,8 +848,17 @@ async function doLogin() {
       await loadTorrents();
       await loadStats();
     } else {
-      document.getElementById('login-error').textContent = 'Invalid password.';
-      document.getElementById('login-error').style.display = 'block';
+      const errData = await r.json().catch(() => ({}));
+      if (errData.requires_totp) {
+        authInfo.requires_totp = true;
+        document.getElementById('totp-field').style.display = '';
+        document.getElementById('login-error').textContent = 'Please enter your authenticator code.';
+        document.getElementById('login-error').style.display = 'block';
+        setTimeout(() => document.getElementById('login-totp').focus(), 50);
+      } else {
+        document.getElementById('login-error').textContent = errData.error || 'Login failed.';
+        document.getElementById('login-error').style.display = 'block';
+      }
     }
   } catch(e) {
     document.getElementById('login-error').textContent = 'Login failed: ' + e.message;
@@ -823,6 +883,21 @@ document.getElementById('login-password').addEventListener('keydown', function(e
   if (e.key === 'Enter') doLogin();
 });
 
+document.getElementById('login-totp').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') doLogin();
+});
+
+let authInfo = {requires_password: true, requires_totp: false};
+
+async function loadAuthInfo() {
+  try {
+    const r = await fetch('/api/auth-info');
+    authInfo = await r.json();
+  } catch(_) {}
+  document.getElementById('totp-field').style.display =
+    authInfo.requires_totp ? '' : 'none';
+}
+
 async function init() {
   if (authToken) {
     try {
@@ -839,23 +914,26 @@ async function init() {
       }
     } catch(_) {}
   }
-  try {
-    const r = await fetch('/api/login', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({password: ''}),
-    });
-    if (r.ok) {
-      const data = await r.json();
-      if (data.token === 'noauth') {
-        authToken = 'noauth';
-        showApp();
-        await loadTorrents();
-        await loadStats();
-        return;
+  await loadAuthInfo();
+  if (!authInfo.requires_password && !authInfo.requires_totp) {
+    try {
+      const r = await fetch('/api/login', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({password: '', totp_code: null}),
+      });
+      if (r.ok) {
+        const data = await r.json();
+        if (data.token === 'noauth') {
+          authToken = 'noauth';
+          showApp();
+          await loadTorrents();
+          await loadStats();
+          return;
+        }
       }
-    }
-  } catch(_) {}
+    } catch(_) {}
+  }
   showLogin();
 }
 
@@ -1326,6 +1404,15 @@ async function openSettings() {
     document.getElementById('s-le-email').value = cfg.letsencrypt_email || '';
     document.getElementById('s-le-port').value = cfg.letsencrypt_http_port || '';
     document.getElementById('s-le-expiry').value = cfg.le_cert_expiry || '';
+    document.getElementById('s-login-rate-limit').value = cfg.web_login_rate_limit ?? '';
+    const twoFAEnabled = !!cfg.totp_enabled;
+    const totpMsg = document.getElementById('totp-status-msg');
+    totpMsg.className = 'ui message ' + (twoFAEnabled ? 'positive' : 'warning');
+    totpMsg.innerHTML = twoFAEnabled
+      ? '<i class="check circle icon"></i> Two-factor authentication is <strong>enabled</strong>.'
+      : '<i class="warning sign icon"></i> Two-factor authentication is <strong>disabled</strong>.';
+    document.getElementById('btn-2fa-enable').style.display  = twoFAEnabled ? 'none' : '';
+    document.getElementById('btn-2fa-disable').style.display = twoFAEnabled ? '' : 'none';
     document.getElementById('s-log-level').value = cfg.log_level || 'info';
     document.getElementById('s-show-stats').checked = cfg.show_stats !== false;
     document.getElementById('s-seeder-threads').value = cfg.seeder_threads || '';
@@ -1389,6 +1476,7 @@ async function saveSettings() {
     letsencrypt_domain: document.getElementById('s-le-domain').value.trim() || null,
     letsencrypt_email: document.getElementById('s-le-email').value.trim() || null,
     letsencrypt_http_port: parseInt(document.getElementById('s-le-port').value) || null,
+    web_login_rate_limit: parseInt(document.getElementById('s-login-rate-limit').value) || null,
   };
   try {
     const r = await apiFetch('/api/config', {
@@ -1401,6 +1489,55 @@ async function saveSettings() {
     } else {
       alert('Failed to save settings: ' + await r.text());
     }
+  } catch(e) {
+    if (e.message !== 'Unauthorized') alert('Error: ' + e.message);
+  }
+}
+
+let pending2FASecret = null;
+
+async function open2FASetup() {
+  try {
+    const r = await apiFetch('/api/2fa/setup', {method: 'POST'});
+    const d = await r.json();
+    pending2FASecret = d.secret;
+    document.getElementById('twofa-secret-text').textContent = d.secret;
+    document.getElementById('twofa-confirm-code').value = '';
+    document.getElementById('twofa-error').style.display = 'none';
+    const qrEl = document.getElementById('twofa-qr-canvas');
+    qrEl.innerHTML = '';
+    new QRCode(qrEl, {text: d.otpauth_uri, width: 200, height: 200});
+    $('#twofa-modal').modal('show');
+  } catch(e) {
+    if (e.message !== 'Unauthorized') alert('Error: ' + e.message);
+  }
+}
+
+async function confirm2FA() {
+  const code = document.getElementById('twofa-confirm-code').value.trim();
+  try {
+    const r = await apiFetch('/api/2fa/confirm', {
+      method: 'POST',
+      body: JSON.stringify({secret: pending2FASecret, code}),
+    });
+    if (r.ok) {
+      $('#twofa-modal').modal('hide');
+      await openSettings();
+    } else {
+      const e = await r.json().catch(() => ({error: 'Unknown error'}));
+      document.getElementById('twofa-error').textContent = e.error || 'Invalid code';
+      document.getElementById('twofa-error').style.display = '';
+    }
+  } catch(e) {
+    if (e.message !== 'Unauthorized') alert('Error: ' + e.message);
+  }
+}
+
+async function disable2FA() {
+  if (!confirm('Disable two-factor authentication? You will only need your password to log in.')) return;
+  try {
+    await apiFetch('/api/2fa/disable', {method: 'DELETE'});
+    await openSettings();
   } catch(e) {
     if (e.message !== 'Unauthorized') alert('Error: ' + e.message);
   }

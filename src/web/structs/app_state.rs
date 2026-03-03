@@ -27,4 +27,5 @@ pub struct AppState {
     pub log_tx: broadcast::Sender<String>,
     pub log_buffer: Arc<std::sync::Mutex<VecDeque<String>>>,
     pub uploads: UploadStore,
+    pub login_attempts: Arc<Mutex<HashMap<std::net::IpAddr, (u32, std::time::Instant)>>>,
 }

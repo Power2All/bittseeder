@@ -43,6 +43,16 @@ use tokio::sync::broadcast;
 
 const SESSION_TTL: Duration = Duration::from_secs(3600);
 
+pub fn verify_totp(secret_base32: &str, code: &str) -> bool {
+    use totp_rs::{Algorithm, Secret, TOTP};
+    let Ok(bytes) = Secret::Encoded(secret_base32.to_string()).to_bytes() else { return false };
+    let Ok(totp) = TOTP::new(
+        Algorithm::SHA1, 6, 1, 30, bytes,
+        Some("BittSeeder".to_string()), "admin".to_string(),
+    ) else { return false };
+    totp.check_current(code).unwrap_or(false)
+}
+
 pub fn verify_password(input: &str, stored: &str) -> bool {
     if stored.starts_with("$argon2") {
         match PasswordHash::new(stored) {
@@ -86,24 +96,133 @@ pub async fn is_authenticated(req: &HttpRequest, data: &Data<AppState>) -> bool 
 #[derive(Deserialize)]
 pub struct LoginRequest {
     pub password: String,
+    pub totp_code: Option<String>,
 }
 
-pub async fn post_login(data: Data<AppState>, body: Json<LoginRequest>) -> HttpResponse {
-    match &data.web_password {
-        None => {
-            HttpResponse::Ok().json(json!({"token": "noauth"}))
-        }
-        Some(expected) => {
-            if verify_password(&body.password, expected) {
-                let token = generate_token();
-                let expiry = Instant::now() + SESSION_TTL;
-                data.sessions.lock().await.insert(token.clone(), expiry);
-                HttpResponse::Ok().json(json!({"token": token}))
-            } else {
-                HttpResponse::Unauthorized().json(json!({"error": "Invalid password"}))
+pub async fn post_login(req: HttpRequest, data: Data<AppState>, body: Json<LoginRequest>) -> HttpResponse {
+    let peer_ip = req
+        .peer_addr()
+        .map(|a| a.ip())
+        .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+    let rate_limit = {
+        let file = data.shared_file.read().await;
+        file.config.web_login_rate_limit.unwrap_or(10)
+    };
+    if rate_limit > 0 {
+        let mut attempts = data.login_attempts.lock().await;
+        let now = std::time::Instant::now();
+        let entry = attempts.entry(peer_ip).or_insert((0, now));
+        if now.duration_since(entry.1) >= std::time::Duration::from_secs(60) {
+            *entry = (1, now);
+        } else {
+            entry.0 += 1;
+            if entry.0 > rate_limit {
+                return HttpResponse::TooManyRequests()
+                    .json(json!({"error": "Too many login attempts. Please try again later."}));
             }
         }
     }
+    if let Some(ref expected) = data.web_password {
+        if !verify_password(&body.password, expected) {
+            return HttpResponse::Unauthorized().json(json!({"error": "Invalid password"}));
+        }
+    }
+    let totp_secret = {
+        let file = data.shared_file.read().await;
+        file.config.totp_secret.clone()
+    };
+    if let Some(ref secret) = totp_secret {
+        let code = body.totp_code.as_deref().unwrap_or("").trim();
+        if code.is_empty() {
+            return HttpResponse::Unauthorized()
+                .json(json!({"error": "TOTP code required", "requires_totp": true}));
+        }
+        if !verify_totp(secret, code) {
+            return HttpResponse::Unauthorized().json(json!({"error": "Invalid TOTP code"}));
+        }
+    }
+    if data.web_password.is_none() {
+        HttpResponse::Ok().json(json!({"token": "noauth"}))
+    } else {
+        let token = generate_token();
+        let expiry = Instant::now() + SESSION_TTL;
+        data.sessions.lock().await.insert(token.clone(), expiry);
+        HttpResponse::Ok().json(json!({"token": token}))
+    }
+}
+
+pub async fn get_auth_info(data: Data<AppState>) -> HttpResponse {
+    let file = data.shared_file.read().await;
+    let requires_totp = file.config.totp_secret.is_some();
+    drop(file);
+    HttpResponse::Ok().json(json!({
+        "requires_password": data.web_password.is_some(),
+        "requires_totp":     requires_totp,
+    }))
+}
+
+pub async fn post_2fa_setup(req: HttpRequest, data: Data<AppState>) -> HttpResponse {
+    if !is_authenticated(&req, &data).await {
+        return HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}));
+    }
+    use totp_rs::{Algorithm, Secret, TOTP};
+    let secret = Secret::generate_secret().to_encoded();
+    let bytes = match secret.to_bytes() {
+        Ok(b) => b,
+        Err(_) => return HttpResponse::InternalServerError()
+            .json(json!({"error": "Failed to generate secret"})),
+    };
+    let totp = match TOTP::new(
+        Algorithm::SHA1, 6, 1, 30, bytes,
+        Some("BittSeeder".to_string()), "admin".to_string(),
+    ) {
+        Ok(t) => t,
+        Err(_) => return HttpResponse::InternalServerError()
+            .json(json!({"error": "Failed to create TOTP"})),
+    };
+    HttpResponse::Ok().json(json!({
+        "secret":      secret.to_string(),
+        "otpauth_uri": totp.get_url(),
+    }))
+}
+
+#[derive(Deserialize)]
+pub struct TwoFAConfirmRequest {
+    pub secret: String,
+    pub code: String,
+}
+
+pub async fn post_2fa_confirm(
+    req: HttpRequest,
+    data: Data<AppState>,
+    body: Json<TwoFAConfirmRequest>,
+) -> HttpResponse {
+    if !is_authenticated(&req, &data).await {
+        return HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}));
+    }
+    if !verify_totp(&body.secret, &body.code) {
+        return HttpResponse::Unauthorized().json(json!({"error": "Invalid TOTP code"}));
+    }
+    let mut file = data.shared_file.write().await;
+    file.config.totp_secret = Some(body.secret.clone());
+    if let Err(e) = write_yaml(&data.yaml_path, &file) {
+        return HttpResponse::InternalServerError().body(e.to_string());
+    }
+    log::info!("[Web] 2FA enabled");
+    HttpResponse::Ok().json(json!({"ok": true}))
+}
+
+pub async fn delete_2fa_disable(req: HttpRequest, data: Data<AppState>) -> HttpResponse {
+    if !is_authenticated(&req, &data).await {
+        return HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}));
+    }
+    let mut file = data.shared_file.write().await;
+    file.config.totp_secret = None;
+    if let Err(e) = write_yaml(&data.yaml_path, &file) {
+        return HttpResponse::InternalServerError().body(e.to_string());
+    }
+    log::info!("[Web] 2FA disabled");
+    HttpResponse::Ok().json(json!({"ok": true}))
 }
 
 pub async fn post_logout(req: HttpRequest, data: Data<AppState>) -> HttpResponse {
@@ -393,11 +512,17 @@ pub async fn get_config(req: HttpRequest, data: Data<AppState>) -> HttpResponse 
         return HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}));
     }
     let file = data.shared_file.read().await;
+    let totp_enabled = file.config.totp_secret.is_some();
     let mut config_json = match serde_json::to_value(&file.config) {
         Ok(v) => v,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
     drop(file);
+    if let serde_json::Value::Object(ref mut map) = config_json {
+        map.remove("web_password");
+        map.remove("totp_secret");
+        map.insert("totp_enabled".to_string(), serde_json::Value::Bool(totp_enabled));
+    }
     let cert_path = data.yaml_path.parent()
         .unwrap_or(std::path::Path::new("."))
         .join("bittseeder.crt");
@@ -420,7 +545,7 @@ pub async fn update_config(req: HttpRequest, data: Data<AppState>, body: Json<Gl
     if !is_authenticated(&req, &data).await {
         return HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}));
     }
-    let new_cfg = body.into_inner();
+    let mut new_cfg = body.into_inner();
     if let Some(ref level_str) = new_cfg.log_level {
         let filter = match level_str.to_ascii_lowercase().as_str() {
             "error" => log::LevelFilter::Error,
@@ -433,9 +558,21 @@ pub async fn update_config(req: HttpRequest, data: Data<AppState>, body: Json<Gl
         log::info!("[Config] Log level set to {}", level_str);
     }
     let mut file = data.shared_file.write().await;
+    if new_cfg.web_password.is_none() {
+        new_cfg.web_password = file.config.web_password.clone();
+    }
+    if new_cfg.totp_secret.is_none() {
+        new_cfg.totp_secret = file.config.totp_secret.clone();
+    }
+    let password_changed = new_cfg.web_password != file.config.web_password;
     file.config = new_cfg;
     if let Err(e) = write_yaml(&data.yaml_path, &file) {
         return HttpResponse::InternalServerError().body(e.to_string());
+    }
+    drop(file);
+    if password_changed {
+        data.sessions.lock().await.clear();
+        log::info!("[Config] Password changed — all active sessions invalidated");
     }
     let _ = data.reload_tx.send(());
     HttpResponse::Ok().json(json!({"ok": true}))
@@ -498,6 +635,10 @@ pub async fn mkdir(req: HttpRequest, data: Data<AppState>, body: Json<MkdirReque
         return HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}));
     }
     let path = std::path::Path::new(&body.path);
+    if path.components().any(|c| c == std::path::Component::ParentDir) {
+        return HttpResponse::BadRequest()
+            .json(json!({"error": "Path must not contain '..' components"}));
+    }
     if let Err(e) = std::fs::create_dir(path) {
         return HttpResponse::BadRequest().json(json!({"error": e.to_string()}));
     }
@@ -604,6 +745,22 @@ pub async fn file_upload_init(
     if body.chunk_size == 0 {
         return HttpResponse::BadRequest().json(json!({"error": "chunk_size must be > 0"}));
     }
+    if std::path::Path::new(&body.dest)
+        .components()
+        .any(|c| c == std::path::Component::ParentDir)
+    {
+        return HttpResponse::BadRequest()
+            .json(json!({"error": "Destination path must not contain '..' components"}));
+    }
+    const MAX_CONCURRENT_UPLOADS: usize = 20;
+    {
+        let uploads = data.uploads.lock().await;
+        if uploads.len() >= MAX_CONCURRENT_UPLOADS {
+            return HttpResponse::TooManyRequests().json(json!({
+                "error": "Too many concurrent uploads. Please finalize or cancel existing uploads first."
+            }));
+        }
+    }
     let dest = std::path::PathBuf::from(&body.dest);
     let mut part_path_os = dest.clone().into_os_string();
     part_path_os.push(".uploaded");
@@ -676,6 +833,14 @@ pub async fn file_upload_chunk(
         if query.n >= session.total_chunks {
             return HttpResponse::BadRequest().json(json!({
                 "error": format!("Chunk index {} out of range (total {})", query.n, session.total_chunks)
+            }));
+        }
+        if body.len() as u64 > session.chunk_size {
+            return HttpResponse::BadRequest().json(json!({
+                "error": format!(
+                    "Chunk body ({} bytes) exceeds declared chunk_size ({} bytes)",
+                    body.len(), session.chunk_size
+                )
             }));
         }
         (session.part_path.clone(), session.chunk_size, session.total_chunks)

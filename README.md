@@ -26,6 +26,8 @@ BittSeeder handles both protocols from a single binary. Both share the same torr
 - [Web management UI](#web-management-ui)
   - [Authentication](#authentication)
   - [Password hashing](#password-hashing-argon2id)
+  - [Login rate limiting](#login-rate-limiting)
+  - [Two-factor authentication (TOTP)](#two-factor-authentication-totp)
   - [Endpoints](#endpoints)
 - [Batch Add & torrent upload](#batch-add--torrent-upload)
 - [Let's Encrypt auto-certificate](#lets-encrypt-auto-certificate)
@@ -207,6 +209,8 @@ config:
   # letsencrypt_domain: myserver.example.com
   # letsencrypt_email:  admin@example.com
   # letsencrypt_http_port: 80     # port BittSeeder binds for HTTP-01 challenge
+  # web_login_rate_limit: 10      # max login attempts/min/IP; 0 to disable
+  # totp_secret: null             # managed via web UI — do not edit by hand
   log_level: info
   show_stats: true
   proxy:
@@ -269,6 +273,8 @@ torrents:
 | `letsencrypt_domain` | `string` | — | Domain name for automatic Let's Encrypt TLS certificate |
 | `letsencrypt_email` | `string` | — | Contact email registered with the Let's Encrypt account |
 | `letsencrypt_http_port` | `u16` | `80` | Port BittSeeder binds to serve the HTTP-01 ACME challenge |
+| `web_login_rate_limit` | `u32` | `10` | Max login attempts per minute per IP address (`0` to disable) |
+| `totp_secret` | `string` | — | Base32-encoded TOTP secret — set via the **Settings → Security → 2FA** flow; do not edit by hand |
 
 ### Torrent entry keys
 
@@ -320,6 +326,8 @@ When a `web_password` is configured:
 
 When no password is configured the UI is accessible without authentication.
 
+If **TOTP 2FA** is enabled (see [below](#two-factor-authentication-totp)), the login form shows a second field for the 6-digit authenticator code after the password is accepted.
+
 ### Password hashing (Argon2ID)
 
 Passwords are stored and verified using **Argon2ID** — they are never stored in plain text. Use the built-in `hash-password` subcommand to generate a hash:
@@ -348,14 +356,46 @@ config:
 
 > **Note:** plain-text passwords are still accepted as a fallback for development convenience (any value that does not start with `$argon2` is compared literally). For production use always store a hashed value.
 
+### Login rate limiting
+
+By default, BittSeeder allows at most **10 login attempts per minute per IP address**. After that the server returns HTTP 429. The limit can be changed at runtime through **Settings → Security → Login Rate Limit** or via the YAML key `web_login_rate_limit`. Set it to `0` to disable rate limiting entirely.
+
+### Two-factor authentication (TOTP)
+
+BittSeeder supports optional **TOTP 2FA** (RFC 6238, SHA-1, 6 digits, 30-second window) compatible with Google Authenticator, Authy, and any standard TOTP app.
+
+#### Enabling 2FA
+
+1. Open **Settings → Security → Two-Factor Authentication**.
+2. Click **Enable 2FA** — a QR code appears.
+3. Scan the code with your authenticator app.
+4. Enter the displayed 6-digit code to confirm → **Activate 2FA**.
+5. The `totp_secret` field is written to `config.yaml` and 2FA is immediately active.
+
+#### Login with 2FA enabled
+
+After entering a correct password the server checks whether a TOTP secret is configured. If so, it returns `{"error":"TOTP code required","requires_totp":true}` and the login form reveals an **Authenticator Code** field. Submit again with the correct 6-digit code.
+
+#### Disabling 2FA
+
+Open **Settings → Security** and click **Disable 2FA**. The `totp_secret` is cleared from the config immediately — no re-authentication with the code is needed.
+
+#### YAML / manual configuration
+
+The `totp_secret` field holds a base32-encoded shared secret. It is intended to be managed through the web UI only. If you edit `config.yaml` by hand, remove the `totp_secret` line (or set it to `null`) to disable 2FA.
+
 ### Endpoints
 
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/` | Web management UI (HTML) |
 | `GET` | `/ws` | WebSocket — live stats + log stream |
-| `POST` | `/api/login` | `{"password":"…"}` → `{"token":"…"}` |
+| `GET` | `/api/auth-info` | Public — returns `{"requires_password":bool,"requires_totp":bool}` |
+| `POST` | `/api/login` | `{"password":"…","totp_code":"…"}` → `{"token":"…"}` |
 | `POST` | `/api/logout` | Invalidates the current bearer token |
+| `POST` | `/api/2fa/setup` | Generate a TOTP secret; returns `{"secret":"…","otpauth_uri":"…"}` |
+| `POST` | `/api/2fa/confirm` | `{"secret":"…","code":"…"}` — verify and save the TOTP secret |
+| `DELETE` | `/api/2fa/disable` | Clear the TOTP secret (disable 2FA) |
 | `GET` | `/api/status` | Live stats: uploaded bytes and peer count per torrent |
 | `GET` | `/api/config` | Read global config |
 | `PUT` | `/api/config` | Update global config (triggers hot-reload) |

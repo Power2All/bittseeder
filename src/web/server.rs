@@ -6,11 +6,13 @@ use crate::web::api::{
     batch_add,
     browse,
     delete_torrent,
+    delete_2fa_disable,
     file_upload_cancel,
     file_upload_hash_progress,
     file_upload_chunk,
     file_upload_finalize,
     file_upload_init,
+    get_auth_info,
     get_config,
     get_index,
     get_logo,
@@ -20,6 +22,8 @@ use crate::web::api::{
     mkdir,
     post_login,
     post_logout,
+    post_2fa_confirm,
+    post_2fa_setup,
     update_config,
     update_torrent,
     upload_torrent,
@@ -77,6 +81,7 @@ pub async fn start(
     } = params;
     let sessions: SessionStore = Arc::new(Mutex::new(HashMap::new()));
     let uploads: UploadStore  = Arc::new(Mutex::new(HashMap::new()));
+    let login_attempts = Arc::new(Mutex::new(HashMap::new()));
     let state = Data::new(AppState {
         yaml_path,
         shared_file,
@@ -87,6 +92,7 @@ pub async fn start(
         log_tx,
         log_buffer,
         uploads,
+        login_attempts,
     });
     let cert_key = if let (Some(cert), Some(key)) = (config.cert_path, config.key_path) {
         Some((cert, key))
@@ -111,8 +117,12 @@ pub async fn start(
             .route("/", web::get().to(get_index))
             .route("/logo.png", web::get().to(get_logo))
             .route("/api/ws", web::get().to(get_ws))
+            .route("/api/auth-info", web::get().to(get_auth_info))
             .route("/api/login", web::post().to(post_login))
             .route("/api/logout", web::post().to(post_logout))
+            .route("/api/2fa/setup", web::post().to(post_2fa_setup))
+            .route("/api/2fa/confirm", web::post().to(post_2fa_confirm))
+            .route("/api/2fa/disable", web::delete().to(delete_2fa_disable))
             .route("/api/status", web::get().to(get_status))
             .route("/api/config", web::get().to(get_config))
             .route("/api/config", web::put().to(update_config))
