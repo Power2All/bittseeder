@@ -1,0 +1,11 @@
+services:
+  bittseeder:
+    image: power2all/bittseeder:latest
+    build: .
+    container_name: "bittseeder"
+    hostname: "bittseeder"
+    ports:
+      - "6881:6881/tcp" # TCP Data Port
+      - "6881:6881/udp" # UDP Data Port
+      - "8090:8090/tcp" # Web GUI Port
+      - "80:80/tcp"     # LetsEncrypt Port
