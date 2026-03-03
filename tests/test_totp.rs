@@ -1,7 +1,11 @@
 use bittseeder::web::api::verify_totp;
-use totp_rs::{Algorithm, Secret, TOTP};
+use totp_rs::{
+    Algorithm,
+    Secret,
+    TOTP
+};
 
-const TEST_SECRET: &str = "JBSWY3DPEHPK3PXP";
+const TEST_SECRET: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 fn make_totp(secret: &str) -> TOTP {
     let bytes = Secret::Encoded(secret.to_string()).to_bytes().unwrap();
@@ -21,7 +25,6 @@ fn valid_code_passes() {
 
 #[test]
 fn wrong_code_fails() {
-    // Generate the current valid code, flip the last digit.
     let totp = make_totp(TEST_SECRET);
     let code = totp.generate_current().unwrap();
     let last: u32 = code.chars().last().unwrap().to_digit(10).unwrap();
@@ -42,8 +45,7 @@ fn non_numeric_code_fails() {
 
 #[test]
 fn invalid_base32_secret_fails() {
-    // "!!!" is not valid base32 — Secret::Encoded(...).to_bytes() should fail
-    assert!(!verify_totp("!!!", "123456"));
+    assert!(!verify_totp("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", "123456"));
 }
 
 #[test]
@@ -53,18 +55,16 @@ fn empty_secret_fails() {
 
 #[test]
 fn different_secret_fails() {
-    let other = "AAAAAAAAAAAAAAAA";
+    let other = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
     let totp = make_totp(TEST_SECRET);
     let code = totp.generate_current().unwrap();
-    // Code generated for TEST_SECRET should not verify against a different secret
     assert!(!verify_totp(other, &code));
 }
 
 #[test]
 fn generated_secret_roundtrips() {
-    // generate_secret() → verify code from that secret
-    let secret = Secret::generate_secret();
-    let secret_str = secret.to_string();
+    let secret = Secret::generate_secret().to_encoded();
+    let secret_str = secret.to_string(); // base32 string
     let bytes = secret.to_bytes().unwrap();
     let totp = TOTP::new(
         Algorithm::SHA1, 6, 1, 30, bytes,

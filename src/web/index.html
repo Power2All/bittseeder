@@ -692,7 +692,7 @@
       <p>Scan the QR code with <strong>Google Authenticator</strong>, Authy, or any TOTP-compatible app,
          then enter the 6-digit code to confirm.</p>
       <div style="text-align:center;margin:16px 0">
-        <canvas id="twofa-qr-canvas"></canvas>
+        <div id="twofa-qr-canvas" style="display:inline-block"></div>
       </div>
       <p style="text-align:center;font-size:.85em">
         Manual key: <code id="twofa-secret-text" style="word-break:break-all"></code>
@@ -740,7 +740,7 @@
 <script src="https://cdn.jsdelivr.net/npm/semantic-ui@2.5.0/dist/semantic.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 <script>
 let torrents = [];
 let stats = {};
@@ -1504,8 +1504,9 @@ async function open2FASetup() {
     document.getElementById('twofa-secret-text').textContent = d.secret;
     document.getElementById('twofa-confirm-code').value = '';
     document.getElementById('twofa-error').style.display = 'none';
-    QRCode.toCanvas(document.getElementById('twofa-qr-canvas'), d.otpauth_uri,
-      {width: 200}, err => { if (err) console.error(err); });
+    const qrEl = document.getElementById('twofa-qr-canvas');
+    qrEl.innerHTML = '';
+    new QRCode(qrEl, {text: d.otpauth_uri, width: 200, height: 200});
     $('#twofa-modal').modal('show');
   } catch(e) {
     if (e.message !== 'Unauthorized') alert('Error: ' + e.message);

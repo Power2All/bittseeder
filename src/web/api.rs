@@ -166,7 +166,7 @@ pub async fn post_2fa_setup(req: HttpRequest, data: Data<AppState>) -> HttpRespo
         return HttpResponse::Unauthorized().json(json!({"error": "Unauthorized"}));
     }
     use totp_rs::{Algorithm, Secret, TOTP};
-    let secret = Secret::generate_secret();
+    let secret = Secret::generate_secret().to_encoded();
     let bytes = match secret.to_bytes() {
         Ok(b) => b,
         Err(_) => return HttpResponse::InternalServerError()
