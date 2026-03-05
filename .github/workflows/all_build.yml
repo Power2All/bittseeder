@@ -26,7 +26,7 @@ jobs:
         shell: bash
         run: |
           # Try to get version from the previous branch name (when merging from release branches)
-          PREV_BRANCH=$(git log -1 --pretty=%B | grep -oP 'Merge branch \'\K[^\']*' | head -1)
+          PREV_BRANCH=$(git log -1 --pretty=%B | grep -oP "Merge branch '\K[^']*" | head -1)
 
           if [[ "$PREV_BRANCH" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             VERSION=$PREV_BRANCH
@@ -36,7 +36,7 @@ jobs:
 
             if [[ -z "$VERSION" ]]; then
               # Fallback to Cargo.toml version
-              VERSION=$(grep '^version = ' Cargo.toml | head -1 | awk '{print $3}' | tr -d '"')
+              VERSION=$(grep "^version = " Cargo.toml | head -1 | awk "{print \$3}" | tr -d '"')
             fi
           fi
 
