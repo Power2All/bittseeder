@@ -2,7 +2,6 @@ use bittseeder::config;
 use bittseeder::seeder;
 use bittseeder::stats;
 use bittseeder::torrent;
-use bittseeder::tracker;
 use bittseeder::web;
 
 

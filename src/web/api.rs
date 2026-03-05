@@ -122,10 +122,9 @@ pub async fn post_login(req: HttpRequest, data: Data<AppState>, body: Json<Login
             }
         }
     }
-    if let Some(ref expected) = data.web_password {
-        if !verify_password(&body.password, expected) {
-            return HttpResponse::Unauthorized().json(json!({"error": "Invalid password"}));
-        }
+    if let Some(ref expected) = data.web_password
+        && !verify_password(&body.password, expected) {
+        return HttpResponse::Unauthorized().json(json!({"error": "Invalid password"}));
     }
     let totp_secret = {
         let file = data.shared_file.read().await;
