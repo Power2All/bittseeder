@@ -149,6 +149,8 @@ jobs:
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
             upx --best --lzma target/release/bittseeder.exe
+          elif [ "${{ runner.os }}" = "macOS" ]; then
+            upx --best --lzma --force-macos target/release/bittseeder
           else
             upx --best --lzma target/release/bittseeder
           fi
