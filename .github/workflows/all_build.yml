@@ -118,12 +118,14 @@ jobs:
           UPX_VERSION_NOV="${UPX_VERSION#v}"
           UPX_URL="${{ matrix.upx_base_url }}/$UPX_VERSION/upx-$UPX_VERSION_NOV-${{ matrix.upx_file }}"
           echo "Downloading UPX from: $UPX_URL"
-          cd /tmp
           if [ "${{ runner.os }}" = "Windows" ]; then
+            mkdir -p upx-temp
+            cd upx-temp
             curl -L "$UPX_URL" -o upx.zip
-            unzip upx.zip -d upx
-            echo "/tmp/upx" >> $GITHUB_PATH
+            unzip upx.zip
+            echo "$PWD" >> $GITHUB_PATH
           else
+            cd /tmp
             curl -L "$UPX_URL" -o upx.tar.xz
             tar xf upx.tar.xz
             UPX_DIR=$(ls -d upx* | head -1)
@@ -148,7 +150,7 @@ jobs:
         shell: bash
         run: |
           if [ "${{ runner.os }}" = "Windows" ]; then
-            upx --best --lzma target/release/bittseeder.exe
+            ./upx.exe --best --lzma target/release/bittseeder.exe
           elif [ "${{ runner.os }}" = "macOS" ]; then
             upx --best --lzma --force-macos target/release/bittseeder
           else
