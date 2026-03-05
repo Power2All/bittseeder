@@ -81,8 +81,6 @@ jobs:
             binary_ext: .bin
             binary_name: macos
             strip_command: strip
-            upx_base_url: https://github.com/upx/upx/releases/download
-            upx_file: amd64_Darwin.tar.xz
           - os: windows-latest
             binary_ext: .exe
             binary_name: windows
@@ -112,7 +110,8 @@ jobs:
             "${{ matrix.strip_command }}" target/release/bittseeder
           fi
 
-      - name: Download and install UPX
+      - name: Download and install UPX (Linux/Windows)
+        if: matrix.upx_base_url != ''
         shell: bash
         run: |
           UPX_VERSION="${{ needs.get_version.outputs.upx_version }}"
@@ -132,6 +131,17 @@ jobs:
             chmod +x upx
             pwd >> $GITHUB_PATH
           fi
+
+      - name: Build UPX from source (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd /tmp
+          git clone https://github.com/upx/upx.git
+          cd upx
+          git checkout $(git describe --tags --abbrev=0)
+          make all
+          chmod +x upx
+          echo "/tmp/upx" >> $GITHUB_PATH
 
       - name: Compress binary with UPX
         shell: bash
