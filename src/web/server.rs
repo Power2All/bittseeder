@@ -12,11 +12,13 @@ use crate::web::api::{
     file_upload_chunk,
     file_upload_finalize,
     file_upload_init,
+    get_app_js,
     get_auth_info,
     get_config,
     get_index,
     get_logo,
     get_status,
+    get_style,
     get_torrents,
     get_ws,
     mkdir,
@@ -116,6 +118,8 @@ pub async fn start(
             .app_data(web::PayloadConfig::default().limit(32 * 1024 * 1024))
             .route("/", web::get().to(get_index))
             .route("/logo.png", web::get().to(get_logo))
+            .route("/style.css", web::get().to(get_style))
+            .route("/app.js", web::get().to(get_app_js))
             .route("/api/ws", web::get().to(get_ws))
             .route("/api/auth-info", web::get().to(get_auth_info))
             .route("/api/login", web::post().to(post_login))

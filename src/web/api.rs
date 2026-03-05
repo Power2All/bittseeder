@@ -302,6 +302,20 @@ pub async fn get_logo() -> HttpResponse {
         .body(include_bytes!("logo.png").as_ref())
 }
 
+pub async fn get_style() -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("text/css; charset=utf-8")
+        .insert_header(("Cache-Control", "public, max-age=3600"))
+        .body(include_str!("style.css"))
+}
+
+pub async fn get_app_js() -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("application/javascript; charset=utf-8")
+        .insert_header(("Cache-Control", "public, max-age=3600"))
+        .body(include_str!("app.js"))
+}
+
 #[derive(Deserialize)]
 pub struct WsQuery {
     pub token: Option<String>,
