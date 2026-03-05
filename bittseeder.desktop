@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=0.1.0
+Type=Application
+Name=BittSeeder
+Comment=Unified BT+RTC Seeder — Seeds over BitTorrent and/or WebRTC simultaneously
+Exec=bittseeder
+Icon=bittseeder
+Terminal=true
+Categories=Network;FileTransfer;P2P;
+Keywords=torrent;bittorrent;seeder;webrtc;webtorrent;

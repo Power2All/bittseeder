@@ -1,9 +1,10 @@
-mod config;
-mod seeder;
-mod stats;
-mod torrent;
-mod tracker;
-mod web;
+use bittseeder::config;
+use bittseeder::seeder;
+use bittseeder::stats;
+use bittseeder::torrent;
+use bittseeder::tracker;
+use bittseeder::web;
+
 
 use clap::{
     Parser,
