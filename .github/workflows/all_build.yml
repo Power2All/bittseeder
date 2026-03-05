@@ -136,9 +136,10 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           cd /tmp
-          git clone https://github.com/upx/upx.git
+          git clone --recursive https://github.com/upx/upx.git
           cd upx
           git checkout $(git describe --tags --abbrev=0)
+          git submodule update --init --recursive
           make all
           chmod +x upx
           echo "/tmp/upx" >> $GITHUB_PATH
