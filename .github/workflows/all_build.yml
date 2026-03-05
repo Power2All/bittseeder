@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
+      upx_version: ${{ steps.get_upx_version.outputs.upx_version }}
 
     steps:
       - name: Checkout code
@@ -54,6 +55,13 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Final version: $VERSION"
 
+      - name: Get latest UPX version
+        id: get_upx_version
+        run: |
+          UPX_VERSION=$(curl -s https://api.github.com/repos/upx/upx/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+          echo "upx_version=$UPX_VERSION" >> $GITHUB_OUTPUT
+          echo "Latest UPX version: $UPX_VERSION"
+
   build:
     name: Build on ${{ matrix.os }}
     needs: get_version
@@ -67,17 +75,20 @@ jobs:
             binary_ext: .bin
             binary_name: linux
             strip_command: strip
-            upx_url: https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-amd64_linux.tar.xz
+            upx_base_url: https://github.com/upx/upx/releases/download
+            upx_file: amd64_linux.tar.xz
           - os: macos-latest
             binary_ext: .bin
             binary_name: macos
             strip_command: strip
-            upx_url: https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-amd64_macos.tar.xz
+            upx_base_url: https://github.com/upx/upx/releases/download
+            upx_file: amd64_Darwin.tar.xz
           - os: windows-latest
             binary_ext: .exe
             binary_name: windows
             strip_command: strip
-            upx_url: https://github.com/upx/upx/releases/download/v4.2.1/upx-4.2.1-win64.zip
+            upx_base_url: https://github.com/upx/upx/releases/download
+            upx_file: win64.zip
 
     steps:
       - name: Checkout code
@@ -104,13 +115,16 @@ jobs:
       - name: Download and install UPX
         shell: bash
         run: |
+          UPX_VERSION="${{ needs.get_version.outputs.upx_version }}"
+          UPX_URL="${{ matrix.upx_base_url }}/$UPX_VERSION/upx-$UPX_VERSION-${{ matrix.upx_file }}"
+          echo "Downloading UPX from: $UPX_URL"
           cd /tmp
           if [ "${{ runner.os }}" = "Windows" ]; then
-            curl -L "${{ matrix.upx_url }}" -o upx.zip
+            curl -L "$UPX_URL" -o upx.zip
             unzip upx.zip -d upx
             echo "/tmp/upx" >> $GITHUB_PATH
           else
-            curl -L "${{ matrix.upx_url }}" -o upx.tar.xz
+            curl -L "$UPX_URL" -o upx.tar.xz
             tar xf upx.tar.xz
             UPX_DIR=$(ls -d upx* | head -1)
             cd "$UPX_DIR"
