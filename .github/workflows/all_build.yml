@@ -26,22 +26,33 @@ jobs:
         shell: bash
         run: |
           # Try to get version from the previous branch name (when merging from release branches)
-          PREV_BRANCH=$(git log -1 --pretty=%B | grep -oP "Merge branch '\K[^']*" | head -1)
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          echo "Commit message: $COMMIT_MSG"
+
+          # Extract branch name from merge commit
+          if echo "$COMMIT_MSG" | grep -q "Merge branch"; then
+            PREV_BRANCH=$(echo "$COMMIT_MSG" | sed -n "s/Merge branch '\([^']*\)'.*/\1/p" | head -1)
+            echo "Previous branch: $PREV_BRANCH"
+          fi
 
           if [[ "$PREV_BRANCH" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             VERSION=$PREV_BRANCH
+            echo "Using version from branch name"
           else
             # Try to get from git tags (latest tag)
             VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 
-            if [[ -z "$VERSION" ]]; then
+            if [[ -n "$VERSION" ]]; then
+              echo "Using version from git tag"
+            else
               # Fallback to Cargo.toml version
-              VERSION=$(grep "^version = " Cargo.toml | head -1 | awk "{print \$3}" | tr -d '"')
+              VERSION=$(grep "^version = " Cargo.toml | head -1 | awk '{print $3}' | tr -d '"')
+              echo "Using version from Cargo.toml"
             fi
           fi
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Detected version: $VERSION"
+          echo "Final version: $VERSION"
 
   build:
     name: Build on ${{ matrix.os }}
