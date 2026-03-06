@@ -123,7 +123,9 @@ jobs:
             cd upx-temp
             curl -L "$UPX_URL" -o upx.zip
             unzip upx.zip
-            echo "$PWD" >> $GITHUB_PATH
+            cp upx.exe ../upx.exe
+            cd ..
+            rm -rf upx-temp
           else
             cd /tmp
             curl -L "$UPX_URL" -o upx.tar.xz
