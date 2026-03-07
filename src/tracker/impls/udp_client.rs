@@ -19,11 +19,12 @@ impl BtUdpClient {
     ) -> Result<AnnounceResponse, Box<dyn std::error::Error + Send + Sync>> {
         let addr = parse_udp_tracker_addr(&self.tracker_url)
             .ok_or_else(|| format!("invalid UDP tracker URL: {}", self.tracker_url))?;
-        let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
         let remote_addr = tokio::net::lookup_host(&addr)
             .await?
             .next()
             .ok_or("UDP tracker DNS resolution failed")?;
+        let bind_addr = if remote_addr.is_ipv6() { "[::]:0" } else { "0.0.0.0:0" };
+        let socket = tokio::net::UdpSocket::bind(bind_addr).await?;
         socket.connect(remote_addr).await?;
         let txid1: u32 = rand::rng().random();
         let mut connect_req = [0u8; 16];
