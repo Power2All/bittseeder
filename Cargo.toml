@@ -1,6 +1,6 @@
 [package]
 name = "bittseeder"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "MIT"
 description = "Unified BT+RTC Seeder — Seeds over BitTorrent and/or WebRTC simultaneously."
@@ -64,7 +64,7 @@ winres = "^0.1"
 name = "BittSeeder"
 identifier = "com.power2all.bittseeder"
 icon = ["icon.ico"]
-version = "0.1.0"
+version = "0.1.1"
 copyright = "Copyright (c) 2025 Jasper Lingers"
 category = "Public Utility"
 short_description = "Unified BT+RTC Seeder"

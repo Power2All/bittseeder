@@ -819,9 +819,22 @@ async function open2FASetup() {
     document.getElementById('twofa-secret-text').textContent = d.secret;
     document.getElementById('twofa-confirm-code').value = '';
     document.getElementById('twofa-error').style.display = 'none';
+    
+    // Generate QR code with proper settings for scannability
     const qrEl = document.getElementById('twofa-qr-canvas');
     qrEl.innerHTML = '';
-    new QRCode(qrEl, {text: d.otpauth_uri, width: 200, height: 200});
+    
+    // Use qrcodejs2 with optimal settings for scanning
+    new QRCode(qrEl, {
+      text: d.otpauth_uri,
+      width: 256,
+      height: 256,
+      colorDark: "#000000",
+      colorLight: "#ffffff",
+      correctLevel: QRCode.CorrectLevel.H,  // High error correction for better scannability
+      margin: 2,  // Proper quiet zone
+    });
+    
     $('#twofa-modal').modal('show');
   } catch(e) {
     if (e.message !== 'Unauthorized') alert('Error: ' + e.message);

@@ -374,3 +374,118 @@ html.dark-mode .detail-code:hover {
 html.dark-mode .torrent-expand-btn:focus-visible {
   outline-color: #5867d8 !important;
 }
+/* ============================================================================
+   2FA QR Code Styling
+   ============================================================================ */
+
+#twofa-qr-canvas canvas,
+#twofa-qr-canvas img {
+  display: block !important;
+  margin: 0 auto !important;
+  border: 4px solid #fff !important;
+  border-radius: 8px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+  background: #fff !important;
+}
+
+html.dark-mode #twofa-qr-canvas canvas,
+html.dark-mode #twofa-qr-canvas img {
+  border-color: #2a2a2a !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5) !important;
+  background: #fff !important;
+}
+
+/* Ensure QR code container has proper contrast */
+#twofa-qr-canvas {
+  position: relative !important;
+}
+
+#twofa-qr-canvas::before {
+  content: '' !important;
+  position: absolute !important;
+  inset: 0 !important;
+  border: 1px solid #ddd !important;
+  border-radius: 8px !important;
+  pointer-events: none !important;
+}
+
+html.dark-mode #twofa-qr-canvas::before {
+  border-color: #444 !important;
+}
+
+/* 2FA modal theming */
+html.dark-mode .ui.modal > .content {
+  background: #1a1a1a !important;
+  color: #ddd !important;
+}
+
+html.dark-mode #twofa-secret-text {
+  background: #2a2a2a !important;
+  border-color: #444 !important;
+  color: #ddd !important;
+}
+
+/* ============================================================================
+   Modal Enhancements for 2FA
+   ============================================================================ */
+
+/* Improve 2FA modal visibility */
+#twofa-modal .ui.modal > .content {
+  background: #fff !important;
+}
+
+html.dark-mode #twofa-modal .ui.modal > .content {
+  background: #1a1a1a !important;
+  color: #ddd !important;
+}
+
+/* Ensure QR code is always scannable - force white background */
+#twofa-qr-canvas > * {
+  background: #ffffff !important;
+  border: 4px solid #ffffff !important;
+}
+
+/* Add quiet zone around QR code */
+#twofa-qr-canvas {
+  padding: 15px !important;
+  background: #ffffff !important;
+  border-radius: 8px !important;
+  border: 2px solid #e0e0e0 !important;
+}
+
+html.dark-mode #twofa-qr-canvas {
+  border-color: #444 !important;
+}
+
+/* ============================================================================
+   Force White Background for QR Code Scannability
+   ============================================================================ */
+
+/* Critical: QR code must have white background for reliable scanning */
+#twofa-modal #twofa-qr-canvas {
+  background: #ffffff !important;
+  border: 2px solid #cccccc !important;
+  padding: 20px !important;
+  border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Override dark mode for QR code container only */
+html.dark-mode #twofa-modal #twofa-qr-canvas {
+  background: #ffffff !important;
+  border-color: #cccccc !important;
+}
+
+/* Ensure QR code canvas/image has proper contrast */
+#twofa-modal #twofa-qr-canvas > canvas,
+#twofa-modal #twofa-qr-canvas > img {
+  border: 2px solid #ffffff !important;
+  margin: 0 !important;
+  display: block !important;
+}
+
+/* Add visual indicator for QR code container */
+#twofa-modal #twofa-qr-canvas::before {
+  content: '' !important;
+  display: none !important;
+}

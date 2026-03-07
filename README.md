@@ -652,10 +652,10 @@ BittSeeder uses the Azureus-style peer ID format:
 -BS0100-<12 random digits>
 ```
 
-| Part | Value | Meaning |
-|---|---|---|
+| Part | Value | Meaning            |
+|---|---|--------------------|
 | `BS` | client code | **B**itt**S**eeder |
-| `0100` | version digits | v0.1.0 |
+| `0100` | version digits | v0.1.1             |
 | 12 digits | random | unique per session |
 
 BitTorrent clients that maintain a known-client database (e.g. qBittorrent, Transmission) will display the raw code (`TS`) until BittSeeder is added to their fingerprint database. BittSeeder will **not** be misidentified as any other client.

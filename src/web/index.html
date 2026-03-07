@@ -544,11 +544,11 @@
     <div class="content">
       <p>Scan the QR code with <strong>Google Authenticator</strong>, Authy, or any TOTP-compatible app,
          then enter the 6-digit code to confirm.</p>
-      <div style="text-align:center;margin:16px 0">
-        <div id="twofa-qr-canvas" style="display:inline-block"></div>
+      <div style="text-align:center;margin:16px 0;padding:20px;background:#fff;border-radius:8px;display:inline-block;border:1px solid #ddd">
+        <div id="twofa-qr-canvas" style="min-width:256px;min-height:256px;background:#fff;padding:10px"></div>
       </div>
       <p style="text-align:center;font-size:.85em">
-        Manual key: <code id="twofa-secret-text" style="word-break:break-all"></code>
+        Manual key: <code id="twofa-secret-text" style="word-break:break-all;padding:4px 8px;background:#f8f8f8;border:1px solid #ddd;border-radius:4px;display:inline-block;margin:0 4px"></code>
       </p>
       <div class="ui form">
         <div class="field">
@@ -558,7 +558,6 @@
         </div>
         <div id="twofa-error" style="color:#c00;margin-top:6px;display:none"></div>
       </div>
-    </div>
     <div class="actions">
       <button class="ui green button" onclick="confirm2FA()">
         <i class="check icon"></i> Activate 2FA
@@ -593,7 +592,7 @@
 <script src="https://cdn.jsdelivr.net/npm/semantic-ui@2.5.0/dist/semantic.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs2@1.0.0/qrcodejs2.min.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
