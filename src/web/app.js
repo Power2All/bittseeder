@@ -6,7 +6,7 @@ const themeIcons = { auto: 'adjust', light: 'sun', dark: 'moon' };
 
 function applyTheme(theme) {
   const dark = theme === 'dark' ||
-    (theme === 'auto' && window.matchMedia('(prefers-color-scheme:dark)').matches);
+      (theme === 'auto' && window.matchMedia('(prefers-color-scheme:dark)').matches);
   document.documentElement.classList.toggle('dark-mode', dark);
 }
 
@@ -151,7 +151,7 @@ async function loadAuthInfo() {
     authInfo = await r.json();
   } catch(_) {}
   document.getElementById('totp-field').style.display =
-    authInfo.requires_totp ? '' : 'none';
+      authInfo.requires_totp ? '' : 'none';
 }
 
 async function init() {
@@ -164,7 +164,7 @@ async function init() {
         const data = await r.json();
         stats = data.torrents || {};
         document.getElementById('status-text').textContent =
-          'Active seeders: ' + Object.keys(stats).length;
+            'Active seeders: ' + Object.keys(stats).length;
         renderTable();
         return;
       }
@@ -328,39 +328,39 @@ function initChart() {
   const c = getChartColors();
 
   chartPeers = new Chart(
-    document.getElementById('chart-peers').getContext('2d'),
-    {
-      type: 'line',
-      data: {
-        datasets: [{
-          data: [],
-          borderColor: c.peers,
-          backgroundColor: 'transparent',
-          borderWidth: 1.5,
-          pointRadius: 0,
-          tension: 0.15,
-        }],
-      },
-      options: makeChartOptions(c, 'Peers', null),
-    }
+      document.getElementById('chart-peers').getContext('2d'),
+      {
+        type: 'line',
+        data: {
+          datasets: [{
+            data: [],
+            borderColor: c.peers,
+            backgroundColor: 'transparent',
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.15,
+          }],
+        },
+        options: makeChartOptions(c, 'Peers', null),
+      }
   );
 
   chartRate = new Chart(
-    document.getElementById('chart-rate').getContext('2d'),
-    {
-      type: 'line',
-      data: {
-        datasets: [{
-          data: [],
-          borderColor: c.rate,
-          backgroundColor: 'transparent',
-          borderWidth: 1.5,
-          pointRadius: 0,
-          tension: 0.15,
-        }],
-      },
-      options: makeChartOptions(c, 'Upload', function(v) { return fmtBytes(v) + '/s'; }),
-    }
+      document.getElementById('chart-rate').getContext('2d'),
+      {
+        type: 'line',
+        data: {
+          datasets: [{
+            data: [],
+            borderColor: c.rate,
+            backgroundColor: 'transparent',
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.15,
+          }],
+        },
+        options: makeChartOptions(c, 'Upload', function(v) { return fmtBytes(v) + '/s'; }),
+      }
   );
 }
 
@@ -441,7 +441,7 @@ function updateTableStats() {
   const totalRate = Object.values(stats).reduce((sum, s) => sum + (s.uploaded || 0), 0);
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     document.getElementById('status-text').textContent =
-      'Peers: ' + totalPeers + ' Upload: ' + fmtBytes(totalRate) + '/s';
+        'Peers: ' + totalPeers + ' Upload: ' + fmtBytes(totalRate) + '/s';
   }
 }
 
@@ -455,7 +455,7 @@ function handleStatsMsg(msg) {
     updateTableStats();
   }
   document.getElementById('status-text').textContent =
-    'Peers: ' + msg.peers + ' Upload: ' + fmtBytes(msg.rate) + '/s';
+      'Peers: ' + msg.peers + ' Upload: ' + fmtBytes(msg.rate) + '/s';
 }
 
 let consoleLines = [];
@@ -510,7 +510,7 @@ async function loadTorrents() {
   } catch(e) {
     if (e.message !== 'Unauthorized') {
       document.getElementById('torrent-tbody').innerHTML =
-        '<tr><td colspan="5" class="center aligned negative">Failed to load torrents: ' + e.message + '</td></tr>';
+          '<tr><td colspan="5" class="center aligned negative">Failed to load torrents: ' + e.message + '</td></tr>';
     }
   }
 }
@@ -528,7 +528,7 @@ async function loadStats() {
 function renderTable() {
   if (torrents.length === 0) {
     document.getElementById('torrent-tbody').innerHTML =
-      '<tr><td colspan="5" class="center aligned">No torrents configured.</td></tr>';
+        '<tr><td colspan="5" class="center aligned">No torrents configured.</td></tr>';
     return;
   }
   let html = '';
@@ -538,8 +538,8 @@ function renderTable() {
     const uploaded = st.uploaded !== undefined ? fmtBytes(st.uploaded) : '—';
     const peers = st.peer_count !== undefined ? st.peer_count : '—';
     const enabledLabel = t.enabled
-      ? '<span class="ui green label">Yes</span>'
-      : '<span class="ui grey label">No</span>';
+        ? '<span class="ui green label">Yes</span>'
+        : '<span class="ui grey label">No</span>';
     const limit = t.upload_limit ? t.upload_limit + ' KB/s' : '<em>unlimited</em>';
     const version = t.version || 'v1';
     const proto = (t.protocol || 'both').toLowerCase();
@@ -724,8 +724,8 @@ async function openSettings() {
     const totpMsg = document.getElementById('totp-status-msg');
     totpMsg.className = 'ui message ' + (twoFAEnabled ? 'positive' : 'warning');
     totpMsg.innerHTML = twoFAEnabled
-      ? '<i class="check circle icon"></i> Two-factor authentication is <strong>enabled</strong>.'
-      : '<i class="warning sign icon"></i> Two-factor authentication is <strong>disabled</strong>.';
+        ? '<i class="check circle icon"></i> Two-factor authentication is <strong>enabled</strong>.'
+        : '<i class="warning sign icon"></i> Two-factor authentication is <strong>disabled</strong>.';
     document.getElementById('btn-2fa-enable').style.display = twoFAEnabled ? 'none' : '';
     document.getElementById('btn-2fa-disable').style.display = twoFAEnabled ? '' : 'none';
     document.getElementById('s-log-level').value = cfg.log_level || 'info';
@@ -819,11 +819,11 @@ async function open2FASetup() {
     document.getElementById('twofa-secret-text').textContent = d.secret;
     document.getElementById('twofa-confirm-code').value = '';
     document.getElementById('twofa-error').style.display = 'none';
-    
+
     // Generate QR code with proper settings for scannability
     const qrEl = document.getElementById('twofa-qr-canvas');
     qrEl.innerHTML = '';
-    
+
     // Use qrcodejs2 with optimal settings for scanning
     new QRCode(qrEl, {
       text: d.otpauth_uri,
@@ -834,7 +834,7 @@ async function open2FASetup() {
       correctLevel: QRCode.CorrectLevel.H,  // High error correction for better scannability
       margin: 2,  // Proper quiet zone
     });
-    
+
     $('#twofa-modal').modal('show');
   } catch(e) {
     if (e.message !== 'Unauthorized') alert('Error: ' + e.message);
@@ -894,9 +894,9 @@ function openBrowser(inputId, mode) {
     startPath = slash > 0 ? cur.substring(0, slash) : '';
   }
   document.getElementById('browser-title').textContent =
-    mode === 'file' ? 'Select File' : 'Select File or Folder';
+      mode === 'file' ? 'Select File' : 'Select File or Folder';
   document.getElementById('browser-select-dir-btn').style.display =
-    mode === 'file' ? 'none' : '';
+      mode === 'file' ? 'none' : '';
   browserNavigate(startPath);
   $('#file-browser-modal').modal({
     onHidden: function() {
@@ -946,12 +946,12 @@ async function browserNavigate(path) {
   browserHideMkdir();
   browserPath = path;
   document.getElementById('browser-list').innerHTML =
-    '<div style="padding:16px;color:#999;text-align:center">Loading…</div>';
+      '<div style="padding:16px;color:#999;text-align:center">Loading…</div>';
   try {
     const r = await apiFetch('/api/browse?path=' + encodeURIComponent(path));
     if (!r.ok) {
       document.getElementById('browser-list').innerHTML =
-        '<div style="padding:12px;color:#c00">Error: ' + escHtml(await r.text()) + '</div>';
+          '<div style="padding:12px;color:#c00">Error: ' + escHtml(await r.text()) + '</div>';
       return;
     }
     const data = await r.json();
@@ -1002,7 +1002,7 @@ async function browserNavigate(path) {
   } catch(e) {
     if (e.message !== 'Unauthorized') {
       document.getElementById('browser-list').innerHTML =
-        '<div style="padding:12px;color:#c00">Error: ' + escHtml(e.message) + '</div>';
+          '<div style="padding:12px;color:#c00">Error: ' + escHtml(e.message) + '</div>';
     }
   }
 }
@@ -1030,6 +1030,8 @@ $(document).on('click', '.browser-item', function() {
 
 let uploadFiles = [];
 let uploadCancelled = false;
+
+// Prevent modal from closing during upload
 $("#upload-modal").modal({ closable: false });
 document.getElementById("u-btn-close").disabled = true;
 document.getElementById("u-btn-close").classList.add("disabled");
@@ -1045,6 +1047,8 @@ function effectiveRelPath(relPath) {
 function openUploadModal() {
   uploadFiles = [];
   uploadCancelled = false;
+
+  // Prevent modal from closing during upload
   $("#upload-modal").modal({ closable: false });
   document.getElementById("u-btn-close").disabled = true;
   document.getElementById("u-btn-close").classList.add("disabled");
@@ -1071,7 +1075,7 @@ function enableModalClosing() {
   const btn = document.getElementById("u-btn-close");
   if (btn) {
     btn.disabled = false;
-    btn.classList.remove(disabled);
+    btn.classList.remove("disabled");
   }
 }
 
@@ -1119,26 +1123,36 @@ async function sha256Hex(buffer) {
   return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Calculate SHA-256 of a file by reading in chunks to avoid memory issues
 async function sha256HexFile(file) {
   const chunkSize = 4 * 1024 * 1024; // 4MB chunks
   let offset = 0;
+
+  // For very large files (>500MB), return empty hash and let server verify
   if (file.size > 500 * 1024 * 1024) {
     console.log('File too large for client-side hashing, server will verify');
     return '';
   }
+
   try {
+    // Read file in chunks and accumulate
     const chunks = [];
     while (offset < file.size) {
       const chunk = file.slice(offset, Math.min(offset + chunkSize, file.size));
+
+      // Use FileReader to read the chunk (more reliable than arrayBuffer)
       const chunkBuf = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
         reader.onerror = () => reject(new Error('Failed to read file chunk'));
         reader.readAsArrayBuffer(chunk);
       });
+
       chunks.push(new Uint8Array(chunkBuf));
       offset += chunkSize;
     }
+
+    // Combine all chunks
     const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
     const combined = new Uint8Array(totalLength);
     let position = 0;
@@ -1146,34 +1160,44 @@ async function sha256HexFile(file) {
       combined.set(chunk, position);
       position += chunk.length;
     }
+
+    // Hash the combined data
     const hash = await crypto.subtle.digest('SHA-256', combined.buffer);
     return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
   } catch (e) {
     console.error('Error reading file for hashing:', e);
+    // If we can't read the file, return empty hash and let server verify
     return '';
   }
 }
 
 async function startUpload() {
   console.log('[Upload] Starting upload process...');
+
   try {
     const destBase = document.getElementById('u-dest-folder').value.trim();
     console.log('[Upload] Destination folder:', destBase);
+
     if (!destBase) {
       alert('Please select a destination folder on the server.');
       return;
     }
+
     if (uploadFiles.length === 0) {
       alert('No files selected.');
       return;
     }
+
     console.log('[Upload] Files to upload:', uploadFiles.length);
     console.log('[Upload] File details:', uploadFiles.map(f => ({
       name: f.relPath,
       size: f.file.size,
       type: f.file.type
     })));
+
     uploadCancelled = false;
+
+    // Prevent modal from closing during upload
     $("#upload-modal").modal({ closable: false });
     document.getElementById("u-btn-close").disabled = true;
     document.getElementById("u-btn-close").classList.add("disabled");
@@ -1181,14 +1205,14 @@ async function startUpload() {
     let html = '';
     for (let i = 0; i < uploadFiles.length; i++) {
       html += `<div style="margin-bottom:12px">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:0.87em;margin-bottom:3px">
-          <span style="word-break:break-all;flex:1;margin-right:8px">${escHtml(uploadFiles[i].relPath)}</span>
-          <span id="u-lbl-${i}" style="flex-shrink:0;color:#888">Waiting…</span>
-        </div>
-        <div style="background:#e0e0e0;border-radius:4px;height:6px;overflow:hidden">
-          <div id="u-bar-${i}" style="height:100%;width:0%;background:#2185d0;transition:width 0.15s;border-radius:4px"></div>
-        </div>
-      </div>`;
+      <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:0.87em;margin-bottom:3px">
+        <span style="word-break:break-all;flex:1;margin-right:8px">${escHtml(uploadFiles[i].relPath)}</span>
+        <span id="u-lbl-${i}" style="flex-shrink:0;color:#888">Waiting…</span>
+      </div>
+      <div style="background:#e0e0e0;border-radius:4px;height:6px;overflow:hidden">
+        <div id="u-bar-${i}" style="height:100%;width:0%;background:#2185d0;transition:width 0.15s;border-radius:4px"></div>
+      </div>
+    </div>`;
     }
     document.getElementById('u-progress-list').innerHTML = html;
     document.getElementById('u-overall-label').textContent = `0 / ${uploadFiles.length} files done`;
@@ -1207,16 +1231,16 @@ async function startUpload() {
       lbl.style.color = '';
       try {
         await uploadSingleFile(uploadFiles[i].file, effectiveRelPath(uploadFiles[i].relPath), destBase,
-          pct => {
-            bar.style.width = (pct * 100).toFixed(1) + '%';
-            lbl.textContent = (pct * 100).toFixed(0) + '%';
-          },
-          pct => {
-            bar.style.background = '#f2711c';
-            bar.style.width = pct + '%';
-            lbl.textContent = 'Verifying ' + pct + '%';
-            lbl.style.color = '#f2711c';
-          });
+            pct => {
+              bar.style.width = (pct * 100).toFixed(1) + '%';
+              lbl.textContent = (pct * 100).toFixed(0) + '%';
+            },
+            pct => {
+              bar.style.background = '#f2711c';
+              bar.style.width = pct + '%';
+              lbl.textContent = 'Verifying ' + pct + '%';
+              lbl.style.color = '#f2711c';
+            });
         bar.style.width = '100%';
         bar.style.background = '#21ba45';
         lbl.textContent = '✓ Done';
@@ -1254,7 +1278,9 @@ async function startUpload() {
 async function uploadSingleFile(file, relPath, destBase, onProgress, onHashProgress) {
   const dest = destBase.replace(/\/+$/, '') + '/' + relPath;
   const totalChunks = Math.max(1, Math.ceil(file.size / UPLOAD_CHUNK_SIZE));
+
   console.log(`Starting upload: ${relPath} (${file.size} bytes, ${totalChunks} chunks)`);
+
   let fileSha256;
   try {
     fileSha256 = await sha256HexFile(file);
@@ -1263,6 +1289,7 @@ async function uploadSingleFile(file, relPath, destBase, onProgress, onHashProgr
     console.error('Failed to calculate file hash:', e);
     fileSha256 = '';
   }
+
   const initR = await apiFetch('/api/file-upload/init', {
     method: 'POST',
     body: JSON.stringify({ dest, size: file.size, chunks: totalChunks, chunk_size: UPLOAD_CHUNK_SIZE, file_sha256: fileSha256 }),
@@ -1277,18 +1304,21 @@ async function uploadSingleFile(file, relPath, destBase, onProgress, onHashProgr
       }
       const start = i * UPLOAD_CHUNK_SIZE;
       const chunk = file.slice(start, Math.min(start + UPLOAD_CHUNK_SIZE, file.size));
+
+      // Use FileReader to read the chunk (more reliable than arrayBuffer for large files)
       const chunkBuf = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
         reader.onerror = () => reject(new Error('Failed to read file chunk'));
         reader.readAsArrayBuffer(chunk);
       });
+
       const sha256 = await sha256Hex(chunkBuf);
       let lastErr = null;
       for (let attempt = 0; attempt < 3; attempt++) {
         const r = await apiFetchBinary(
-          `/api/file-upload/chunk?id=${encodeURIComponent(upload_id)}&n=${i}&sha256=${sha256}`,
-          chunkBuf,
+            `/api/file-upload/chunk?id=${encodeURIComponent(upload_id)}&n=${i}&sha256=${sha256}`,
+            chunkBuf,
         );
         if (r.ok) { lastErr = null; break; }
         lastErr = await r.text();
@@ -1302,18 +1332,17 @@ async function uploadSingleFile(file, relPath, destBase, onProgress, onHashProgr
   }
   onHashProgress(0);
   let polling = true;
-  await (async () => {
+  (async () => {
     while (polling) {
       await new Promise(r => setTimeout(r, 400));
       if (!polling) break;
       try {
         const pr = await apiFetch(`/api/file-upload/${encodeURIComponent(upload_id)}/hash-progress`);
         if (pr.ok) {
-          const {percent} = await pr.json();
+          const { percent } = await pr.json();
           onHashProgress(percent);
         }
-      } catch (_) {
-      }
+      } catch (_) {}
     }
   })();
   try {
@@ -1339,7 +1368,7 @@ async function apiFetchBinary(url, body) {
     authToken = null;
     localStorage.removeItem('seeder_token');
     disconnectWs();
-    await showLogin();
+    showLogin();
     throw new Error('Unauthorized');
   }
   return r;
@@ -1367,7 +1396,7 @@ async function uploadTorrentFile() {
     if (r.status === 401) {
       authToken = null;
       localStorage.removeItem('seeder_token');
-      await showLogin();
+      showLogin();
       return;
     }
     if (r.ok) {
@@ -1394,12 +1423,12 @@ async function batchAdd() {
       const result = await r.json();
       if (result.added === 0) {
         const msg = result.skipped > 0
-          ? `No new items found — ${result.skipped} already tracked.`
-          : 'Source folder is empty or has no new items.';
+            ? `No new items found — ${result.skipped} already tracked.`
+            : 'Source folder is empty or has no new items.';
         showError(msg);
       } else {
         document.getElementById('status-text').textContent =
-          `Batch add: ${result.added} new torrent(s) added, ${result.skipped} already tracked — reloading…`;
+            `Batch add: ${result.added} new torrent(s) added, ${result.skipped} already tracked — reloading…`;
         setTimeout(loadTorrents, 2000);
       }
     } else {
