@@ -76,18 +76,13 @@ impl Seeder {
         if missing {
             return Err("one or more data files are missing — cannot seed".into());
         }
-
         let rate_limiter: Option<SharedRateLimiter> =
             self.config.upload_limit.and_then(|kbs| {
                 NonZeroU32::new(kbs as u32 * 1024).map(|quota_cells| {
                     Arc::new(RateLimiter::direct(Quota::per_second(quota_cells)))
                 })
             });
-
-        // Create the internal stop channel early so every subtask (stats, peers, listener)
-        // can receive the same shutdown signal.
         let (stop_tx, stop_rx) = tokio::sync::watch::channel(false);
-
         let protocol = &self.config.protocol;
         if self.config.show_stats {
             let uploaded_stats = Arc::clone(&self.uploaded);
@@ -121,16 +116,12 @@ impl Seeder {
                 }
             });
         }
-
-        // Announce to ALL valid BT trackers (http, https, udp).
         let mut bt_announce_interval: u64 = 300;
         let bt_trackers: Vec<BtTrackerClient> = if protocol.has_bt() {
             self.try_bt_announce_all(&mut bt_announce_interval).await
         } else {
             Vec::new()
         };
-
-        // Collect all HTTP(S) trackers for RTC.
         let mut rtc_trackers: Vec<RtcTrackerClient> = Vec::new();
         let mut initial_peer_conn: Option<PeerConn> = None;
         if protocol.has_rtc() {
@@ -154,10 +145,7 @@ impl Seeder {
                 }
             }
         }
-
         println!("Seeding… (Ctrl+C to stop)\n");
-
-        // BT re-announce task — iterates over ALL trackers every interval.
         let bt_reannounce_handle = if !bt_trackers.is_empty() {
             let trackers_ann = bt_trackers.clone();
             let uploaded_ann = Arc::clone(&self.uploaded);
@@ -188,7 +176,6 @@ impl Seeder {
         } else {
             None
         };
-
         if protocol.has_bt() {
             if let Some(ref reg) = registry {
                 let entry = TorrentRegistryEntry {
@@ -269,8 +256,6 @@ impl Seeder {
                 });
             }
         }
-
-        // RTC signaling task — announces to ALL HTTP trackers, collects answers from all.
         let rtc_handle = if protocol.has_rtc()
             && !rtc_trackers.is_empty()
             && let Some(current_pc) = initial_peer_conn.take()
@@ -288,7 +273,6 @@ impl Seeder {
                 let mut rtc_interval_ms = config_rtc.rtc_interval_ms;
                 loop {
                     let uploaded = uploaded_rtc.load(Ordering::Relaxed);
-                    // Announce to every RTC tracker and collect all answers.
                     let mut all_answers = Vec::new();
                     for tracker in &trackers_rtc {
                         match tracker.announce_seeder(&current_pc.sdp_offer, uploaded, event).await {
@@ -334,7 +318,6 @@ impl Seeder {
                         _ = tokio::time::sleep(std::time::Duration::from_millis(rtc_interval_ms)) => {}
                         _ = srx.changed() => {
                             if *srx.borrow() {
-                                // Send "stopped" to all RTC trackers on shutdown.
                                 let up = uploaded_rtc.load(Ordering::Relaxed);
                                 for tracker in &trackers_rtc {
                                     let _ = tokio::time::timeout(
@@ -351,8 +334,6 @@ impl Seeder {
         } else {
             None
         };
-
-        // Wait for either Ctrl+C or an external stop signal (e.g. torrent disabled/deleted via UI).
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
                 println!("\n[Seeder] Ctrl+C received — shutting down…");
@@ -376,7 +357,6 @@ impl Seeder {
                 let mut map = reg.write().await;
                 map.remove(&self.torrent_info.info_hash);
             }
-        // Send "stopped" to ALL BT trackers.
         if !bt_trackers.is_empty() {
             let uploaded = self.uploaded.load(Ordering::Relaxed);
             log::info!("[Tracker/BT] Sending 'stopped' announcement to {} tracker(s)…", bt_trackers.len());
@@ -395,36 +375,41 @@ impl Seeder {
         Ok(())
     }
 
-    /// Announce to ALL valid BT tracker URLs (http, https, udp).
-    /// Returns a client for every tracker that accepted the "started" announce.
-    /// Sets `interval_out` to the minimum interval reported by any tracker.
     async fn try_bt_announce_all(&self, interval_out: &mut u64) -> Vec<BtTrackerClient> {
         let urls = &self.torrent_info.tracker_urls;
         if urls.is_empty() {
             log::info!("[Tracker/BT] No tracker configured — seeding without announcing.");
             return Vec::new();
         }
+        let mut hashes: Vec<([u8; 20], &str)> = vec![(self.torrent_info.info_hash, "v1")];
+        if let Some(v2) = self.torrent_info.v2_info_hash {
+            let mut truncated = [0u8; 20];
+            truncated.copy_from_slice(&v2[..20]);
+            hashes.push((truncated, "v2"));
+        }
         let mut trackers = Vec::new();
         for url in urls {
             if url.starts_with("udp://") || url.starts_with("http://") || url.starts_with("https://") {
-                let tracker = BtTrackerClient::new(
-                    url.clone(),
-                    self.torrent_info.info_hash,
-                    self.peer_id,
-                    self.config.listen_port,
-                    self.config.proxy.as_ref(),
-                );
-                match tracker.announce(0, "started").await {
-                    Ok(resp) => {
-                        let interval = resp.interval.max(30);
-                        if interval < *interval_out {
-                            *interval_out = interval;
+                for &(info_hash, label) in &hashes {
+                    let tracker = BtTrackerClient::new(
+                        url.clone(),
+                        info_hash,
+                        self.peer_id,
+                        self.config.listen_port,
+                        self.config.proxy.as_ref(),
+                    );
+                    match tracker.announce(0, "started").await {
+                        Ok(resp) => {
+                            let interval = resp.interval.max(30);
+                            if interval < *interval_out {
+                                *interval_out = interval;
+                            }
+                            log::info!("[Tracker/BT] Announced ({}) to {}: interval={}s", label, url, interval);
+                            trackers.push(tracker);
                         }
-                        log::info!("[Tracker/BT] Announced to {}: interval={}s", url, interval);
-                        trackers.push(tracker);
-                    }
-                    Err(e) => {
-                        log::warn!("[Tracker/BT] {} failed: {} — skipping", url, e);
+                        Err(e) => {
+                            log::warn!("[Tracker/BT] {} ({}) failed: {} — skipping", url, label, e);
+                        }
                     }
                 }
             }
@@ -435,7 +420,6 @@ impl Seeder {
         trackers
     }
 
-    /// Returns clients for ALL HTTP(S) tracker URLs (RTC only uses HTTP).
     fn pick_rtc_trackers(&self) -> Vec<RtcTrackerClient> {
         let urls = &self.torrent_info.tracker_urls;
         if urls.is_empty() {

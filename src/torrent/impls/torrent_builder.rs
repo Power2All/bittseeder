@@ -5,9 +5,11 @@ use crate::torrent::structs::torrent_builder::TorrentBuilder;
 use crate::torrent::structs::torrent_info::TorrentInfo;
 use crate::torrent::torrent::{
     build_hybrid,
+    build_hybrid_magnet_uri,
     build_magnet_uri_simple,
     build_v1,
     build_v2,
+    build_v2_magnet_uri,
     collect_dir_files,
     parse_magnet,
     parse_torrent_meta,
@@ -63,7 +65,20 @@ impl TorrentBuilder {
                     .collect()
             };
             let name = config.name.clone().unwrap_or(meta.name);
-            let magnet_uri = build_magnet_uri_simple(&hex::encode(meta.info_hash), &name, &tracker_urls);
+            let version = match (meta.pieces.is_empty(), meta.v2_info_hash.is_some()) {
+                (false, true)  => TorrentVersion::Hybrid,
+                (true,  true)  => TorrentVersion::V2,
+                _              => TorrentVersion::V1,
+            };
+            let magnet_uri = match &meta.v2_info_hash {
+                Some(v2h) if version == TorrentVersion::Hybrid => {
+                    build_hybrid_magnet_uri(&hex::encode(meta.info_hash), &hex::encode(v2h), &name, &tracker_urls)
+                }
+                Some(v2h) => {
+                    build_v2_magnet_uri(&hex::encode(v2h), &name, &tracker_urls)
+                }
+                None => build_magnet_uri_simple(&hex::encode(meta.info_hash), &name, &tracker_urls),
+            };
             return Ok(TorrentInfo {
                 name,
                 piece_length: meta.piece_length,
@@ -78,8 +93,8 @@ impl TorrentBuilder {
                 info_hash: meta.info_hash,
                 torrent_bytes: data,
                 magnet_uri,
-                version: TorrentVersion::V1,
-                v2_info_hash: None,
+                version,
+                v2_info_hash: meta.v2_info_hash,
                 tracker_urls,
             });
         }
