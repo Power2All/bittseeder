@@ -6,7 +6,7 @@ const themeIcons = { auto: 'adjust', light: 'sun', dark: 'moon' };
 
 function applyTheme(theme) {
   const dark = theme === 'dark' ||
-      (theme === 'auto' && window.matchMedia('(prefers-color-scheme:dark)').matches);
+    (theme === 'auto' && window.matchMedia('(prefers-color-scheme:dark)').matches);
   document.documentElement.classList.toggle('dark-mode', dark);
 }
 
@@ -151,7 +151,7 @@ async function loadAuthInfo() {
     authInfo = await r.json();
   } catch(_) {}
   document.getElementById('totp-field').style.display =
-      authInfo.requires_totp ? '' : 'none';
+    authInfo.requires_totp ? '' : 'none';
 }
 
 async function init() {
@@ -164,7 +164,7 @@ async function init() {
         const data = await r.json();
         stats = data.torrents || {};
         document.getElementById('status-text').textContent =
-            'Active seeders: ' + Object.keys(stats).length;
+          'Active seeders: ' + Object.keys(stats).length;
         renderTable();
         return;
       }
@@ -328,39 +328,39 @@ function initChart() {
   const c = getChartColors();
 
   chartPeers = new Chart(
-      document.getElementById('chart-peers').getContext('2d'),
-      {
-        type: 'line',
-        data: {
-          datasets: [{
-            data: [],
-            borderColor: c.peers,
-            backgroundColor: 'transparent',
-            borderWidth: 1.5,
-            pointRadius: 0,
-            tension: 0.15,
-          }],
-        },
-        options: makeChartOptions(c, 'Peers', null),
-      }
+    document.getElementById('chart-peers').getContext('2d'),
+    {
+      type: 'line',
+      data: {
+        datasets: [{
+          data: [],
+          borderColor: c.peers,
+          backgroundColor: 'transparent',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          tension: 0.15,
+        }],
+      },
+      options: makeChartOptions(c, 'Peers', null),
+    }
   );
 
   chartRate = new Chart(
-      document.getElementById('chart-rate').getContext('2d'),
-      {
-        type: 'line',
-        data: {
-          datasets: [{
-            data: [],
-            borderColor: c.rate,
-            backgroundColor: 'transparent',
-            borderWidth: 1.5,
-            pointRadius: 0,
-            tension: 0.15,
-          }],
-        },
-        options: makeChartOptions(c, 'Upload', function(v) { return fmtBytes(v) + '/s'; }),
-      }
+    document.getElementById('chart-rate').getContext('2d'),
+    {
+      type: 'line',
+      data: {
+        datasets: [{
+          data: [],
+          borderColor: c.rate,
+          backgroundColor: 'transparent',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          tension: 0.15,
+        }],
+      },
+      options: makeChartOptions(c, 'Upload', function(v) { return fmtBytes(v) + '/s'; }),
+    }
   );
 }
 
@@ -441,7 +441,7 @@ function updateTableStats() {
   const totalRate = Object.values(stats).reduce((sum, s) => sum + (s.uploaded || 0), 0);
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     document.getElementById('status-text').textContent =
-        'Peers: ' + totalPeers + ' Upload: ' + fmtBytes(totalRate) + '/s';
+      'Peers: ' + totalPeers + ' Upload: ' + fmtBytes(totalRate) + '/s';
   }
 }
 
@@ -455,7 +455,7 @@ function handleStatsMsg(msg) {
     updateTableStats();
   }
   document.getElementById('status-text').textContent =
-      'Peers: ' + msg.peers + ' Upload: ' + fmtBytes(msg.rate) + '/s';
+    'Peers: ' + msg.peers + ' Upload: ' + fmtBytes(msg.rate) + '/s';
 }
 
 let consoleLines = [];
@@ -510,7 +510,7 @@ async function loadTorrents() {
   } catch(e) {
     if (e.message !== 'Unauthorized') {
       document.getElementById('torrent-tbody').innerHTML =
-          '<tr><td colspan="5" class="center aligned negative">Failed to load torrents: ' + e.message + '</td></tr>';
+        '<tr><td colspan="5" class="center aligned negative">Failed to load torrents: ' + e.message + '</td></tr>';
     }
   }
 }
@@ -528,7 +528,7 @@ async function loadStats() {
 function renderTable() {
   if (torrents.length === 0) {
     document.getElementById('torrent-tbody').innerHTML =
-        '<tr><td colspan="5" class="center aligned">No torrents configured.</td></tr>';
+      '<tr><td colspan="5" class="center aligned">No torrents configured.</td></tr>';
     return;
   }
   let html = '';
@@ -538,8 +538,8 @@ function renderTable() {
     const uploaded = st.uploaded !== undefined ? fmtBytes(st.uploaded) : '—';
     const peers = st.peer_count !== undefined ? st.peer_count : '—';
     const enabledLabel = t.enabled
-        ? '<span class="ui green label">Yes</span>'
-        : '<span class="ui grey label">No</span>';
+      ? '<span class="ui green label">Yes</span>'
+      : '<span class="ui grey label">No</span>';
     const limit = t.upload_limit ? t.upload_limit + ' KB/s' : '<em>unlimited</em>';
     const version = t.version || 'v1';
     const proto = (t.protocol || 'both').toLowerCase();
@@ -724,8 +724,8 @@ async function openSettings() {
     const totpMsg = document.getElementById('totp-status-msg');
     totpMsg.className = 'ui message ' + (twoFAEnabled ? 'positive' : 'warning');
     totpMsg.innerHTML = twoFAEnabled
-        ? '<i class="check circle icon"></i> Two-factor authentication is <strong>enabled</strong>.'
-        : '<i class="warning sign icon"></i> Two-factor authentication is <strong>disabled</strong>.';
+      ? '<i class="check circle icon"></i> Two-factor authentication is <strong>enabled</strong>.'
+      : '<i class="warning sign icon"></i> Two-factor authentication is <strong>disabled</strong>.';
     document.getElementById('btn-2fa-enable').style.display = twoFAEnabled ? 'none' : '';
     document.getElementById('btn-2fa-disable').style.display = twoFAEnabled ? '' : 'none';
     document.getElementById('s-log-level').value = cfg.log_level || 'info';
@@ -819,11 +819,11 @@ async function open2FASetup() {
     document.getElementById('twofa-secret-text').textContent = d.secret;
     document.getElementById('twofa-confirm-code').value = '';
     document.getElementById('twofa-error').style.display = 'none';
-
+    
     // Generate QR code with proper settings for scannability
     const qrEl = document.getElementById('twofa-qr-canvas');
     qrEl.innerHTML = '';
-
+    
     // Use qrcodejs2 with optimal settings for scanning
     new QRCode(qrEl, {
       text: d.otpauth_uri,
@@ -834,7 +834,7 @@ async function open2FASetup() {
       correctLevel: QRCode.CorrectLevel.H,  // High error correction for better scannability
       margin: 2,  // Proper quiet zone
     });
-
+    
     $('#twofa-modal').modal('show');
   } catch(e) {
     if (e.message !== 'Unauthorized') alert('Error: ' + e.message);
@@ -894,9 +894,9 @@ function openBrowser(inputId, mode) {
     startPath = slash > 0 ? cur.substring(0, slash) : '';
   }
   document.getElementById('browser-title').textContent =
-      mode === 'file' ? 'Select File' : 'Select File or Folder';
+    mode === 'file' ? 'Select File' : 'Select File or Folder';
   document.getElementById('browser-select-dir-btn').style.display =
-      mode === 'file' ? 'none' : '';
+    mode === 'file' ? 'none' : '';
   browserNavigate(startPath);
   $('#file-browser-modal').modal({
     onHidden: function() {
@@ -946,12 +946,12 @@ async function browserNavigate(path) {
   browserHideMkdir();
   browserPath = path;
   document.getElementById('browser-list').innerHTML =
-      '<div style="padding:16px;color:#999;text-align:center">Loading…</div>';
+    '<div style="padding:16px;color:#999;text-align:center">Loading…</div>';
   try {
     const r = await apiFetch('/api/browse?path=' + encodeURIComponent(path));
     if (!r.ok) {
       document.getElementById('browser-list').innerHTML =
-          '<div style="padding:12px;color:#c00">Error: ' + escHtml(await r.text()) + '</div>';
+        '<div style="padding:12px;color:#c00">Error: ' + escHtml(await r.text()) + '</div>';
       return;
     }
     const data = await r.json();
@@ -1002,7 +1002,7 @@ async function browserNavigate(path) {
   } catch(e) {
     if (e.message !== 'Unauthorized') {
       document.getElementById('browser-list').innerHTML =
-          '<div style="padding:12px;color:#c00">Error: ' + escHtml(e.message) + '</div>';
+        '<div style="padding:12px;color:#c00">Error: ' + escHtml(e.message) + '</div>';
     }
   }
 }
@@ -1031,10 +1031,10 @@ $(document).on('click', '.browser-item', function() {
 let uploadFiles = [];
 let uploadCancelled = false;
 
-// Prevent modal from closing during upload
-$("#upload-modal").modal({ closable: false });
-document.getElementById("u-btn-close").disabled = true;
-document.getElementById("u-btn-close").classList.add("disabled");
+    // Prevent modal from closing during upload
+    $("#upload-modal").modal({ closable: false });
+    document.getElementById("u-btn-close").disabled = true;
+    document.getElementById("u-btn-close").classList.add("disabled");
 let uploadIncludeFolder = true;
 const UPLOAD_CHUNK_SIZE = 4 * 1024 * 1024;
 
@@ -1048,35 +1048,35 @@ function openUploadModal() {
   uploadFiles = [];
   uploadCancelled = false;
 
-  // Prevent modal from closing during upload
-  $("#upload-modal").modal({ closable: false });
-  document.getElementById("u-btn-close").disabled = true;
-  document.getElementById("u-btn-close").classList.add("disabled");
+    // Prevent modal from closing during upload
+    $("#upload-modal").modal({ closable: false });
+    document.getElementById("u-btn-close").disabled = true;
+    document.getElementById("u-btn-close").classList.add("disabled");
   uploadIncludeFolder = true;
   document.getElementById('u-include-folder').checked = true;
   document.getElementById('u-file-input').value = '';
   document.getElementById('u-folder-input').value = '';
   document.getElementById('u-file-summary').textContent = '';
   showUploadPhase('select');
-  enableModalClosing();
+    enableModalClosing();
   renderUploadFileList();
   $('#upload-modal').modal('show');
 }
 
 function showUploadPhase(phase) {
-
-  function enableModalClosing() {
-    $("#upload-modal").modal({ closable: true });
-    const btn = document.getElementById("u-btn-close");
-    if (btn) {
-      btn.disabled = false;
-      btn.classList.remove(disabled);
-    }
-  }
   document.getElementById('u-select-section').style.display = phase === 'select' ? '' : 'none';
   document.getElementById('u-progress-section').style.display = phase === 'upload' ? '' : 'none';
   document.getElementById('u-btn-upload').style.display = phase === 'select' ? '' : 'none';
   document.getElementById('u-btn-close').textContent = phase === 'select' ? 'Cancel' : 'Close';
+}
+
+function enableModalClosing() {
+  $("#upload-modal").modal({ closable: true });
+  const btn = document.getElementById("u-btn-close");
+  if (btn) {
+    btn.disabled = false;
+    btn.classList.remove("disabled");
+  }
 }
 
 function onUploadFilesSelected(input) {
@@ -1119,10 +1119,6 @@ function renderUploadFileList() {
 }
 
 async function sha256Hex(buffer) {
-  if (!crypto?.subtle) {
-    console.warn('crypto.subtle unavailable (requires HTTPS). Skipping hash.');
-    return '';
-  }
   const hash = await crypto.subtle.digest('SHA-256', buffer);
   return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
@@ -1131,12 +1127,6 @@ async function sha256Hex(buffer) {
 async function sha256HexFile(file) {
   const chunkSize = 4 * 1024 * 1024; // 4MB chunks
   let offset = 0;
-
-  // crypto.subtle requires a secure context (HTTPS/localhost)
-  if (!crypto?.subtle) {
-    console.warn('crypto.subtle unavailable (requires HTTPS). Skipping hash.');
-    return '';
-  }
 
   // For very large files (>500MB), return empty hash and let server verify
   if (file.size > 500 * 1024 * 1024) {
@@ -1212,9 +1202,9 @@ async function startUpload() {
     document.getElementById("u-btn-close").disabled = true;
     document.getElementById("u-btn-close").classList.add("disabled");
     showUploadPhase('upload');
-    let html = '';
-    for (let i = 0; i < uploadFiles.length; i++) {
-      html += `<div style="margin-bottom:12px">
+  let html = '';
+  for (let i = 0; i < uploadFiles.length; i++) {
+    html += `<div style="margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:0.87em;margin-bottom:3px">
         <span style="word-break:break-all;flex:1;margin-right:8px">${escHtml(uploadFiles[i].relPath)}</span>
         <span id="u-lbl-${i}" style="flex-shrink:0;color:#888">Waiting…</span>
@@ -1223,60 +1213,60 @@ async function startUpload() {
         <div id="u-bar-${i}" style="height:100%;width:0%;background:#2185d0;transition:width 0.15s;border-radius:4px"></div>
       </div>
     </div>`;
-    }
-    document.getElementById('u-progress-list').innerHTML = html;
-    document.getElementById('u-overall-label').textContent = `0 / ${uploadFiles.length} files done`;
-    document.getElementById('u-overall-bar').style.cssText = 'height:100%;width:0%;background:#2185d0;transition:width 0.25s;border-radius:4px';
-    let done = 0;
-    for (let i = 0; i < uploadFiles.length; i++) {
-      const lbl = document.getElementById(`u-lbl-${i}`);
-      const bar = document.getElementById(`u-bar-${i}`);
-      if (uploadCancelled) {
-        lbl.textContent = 'Skipped';
-        lbl.style.color = '#aaa';
-        done++;
-        continue;
-      }
-      lbl.textContent = '0%';
-      lbl.style.color = '';
-      try {
-        await uploadSingleFile(uploadFiles[i].file, effectiveRelPath(uploadFiles[i].relPath), destBase,
-            pct => {
-              bar.style.width = (pct * 100).toFixed(1) + '%';
-              lbl.textContent = (pct * 100).toFixed(0) + '%';
-            },
-            pct => {
-              bar.style.background = '#f2711c';
-              bar.style.width = pct + '%';
-              lbl.textContent = 'Verifying ' + pct + '%';
-              lbl.style.color = '#f2711c';
-            });
-        bar.style.width = '100%';
-        bar.style.background = '#21ba45';
-        lbl.textContent = '✓ Done';
-        lbl.style.color = '#21ba45';
-      } catch (e) {
-        if (e.message === 'Cancelled') {
-          lbl.textContent = 'Cancelled';
-          lbl.style.color = '#aaa';
-        } else {
-          bar.style.background = '#db2828';
-          lbl.textContent = '✗ ' + e.message;
-          lbl.style.color = '#db2828';
-        }
-      }
-      done++;
-      document.getElementById('u-overall-label').textContent = `${done} / ${uploadFiles.length} files done`;
-      const overallBar = document.getElementById('u-overall-bar');
-      overallBar.style.width = ((done / uploadFiles.length) * 100) + '%';
-      enableModalClosing();
-      if (done === uploadFiles.length && !uploadCancelled) {
-        overallBar.style.background = '#21ba45';
-      }
-    }
+  }
+  document.getElementById('u-progress-list').innerHTML = html;
+  document.getElementById('u-overall-label').textContent = `0 / ${uploadFiles.length} files done`;
+  document.getElementById('u-overall-bar').style.cssText = 'height:100%;width:0%;background:#2185d0;transition:width 0.25s;border-radius:4px';
+  let done = 0;
+  for (let i = 0; i < uploadFiles.length; i++) {
+    const lbl = document.getElementById(`u-lbl-${i}`);
+    const bar = document.getElementById(`u-bar-${i}`);
     if (uploadCancelled) {
-      document.getElementById('u-overall-label').textContent = 'Upload stopped.';
+      lbl.textContent = 'Skipped';
+      lbl.style.color = '#aaa';
+      done++;
+      continue;
     }
+    lbl.textContent = '0%';
+    lbl.style.color = '';
+    try {
+      await uploadSingleFile(uploadFiles[i].file, effectiveRelPath(uploadFiles[i].relPath), destBase,
+        pct => {
+          bar.style.width = (pct * 100).toFixed(1) + '%';
+          lbl.textContent = (pct * 100).toFixed(0) + '%';
+        },
+        pct => {
+          bar.style.background = '#f2711c';
+          bar.style.width = pct + '%';
+          lbl.textContent = 'Verifying ' + pct + '%';
+          lbl.style.color = '#f2711c';
+        });
+      bar.style.width = '100%';
+      bar.style.background = '#21ba45';
+      lbl.textContent = '✓ Done';
+      lbl.style.color = '#21ba45';
+    } catch (e) {
+      if (e.message === 'Cancelled') {
+        lbl.textContent = 'Cancelled';
+        lbl.style.color = '#aaa';
+      } else {
+        bar.style.background = '#db2828';
+        lbl.textContent = '✗ ' + e.message;
+        lbl.style.color = '#db2828';
+      }
+    }
+    done++;
+    document.getElementById('u-overall-label').textContent = `${done} / ${uploadFiles.length} files done`;
+    const overallBar = document.getElementById('u-overall-bar');
+    overallBar.style.width = ((done / uploadFiles.length) * 100) + '%';
+    enableModalClosing();
+    if (done === uploadFiles.length && !uploadCancelled) {
+      overallBar.style.background = '#21ba45';
+    }
+  }
+  if (uploadCancelled) {
+    document.getElementById('u-overall-label').textContent = 'Upload stopped.';
+  }
   } catch (e) {
     console.error('[Upload] Fatal error in startUpload:', e);
     alert('Upload failed: ' + e.message);
@@ -1327,8 +1317,8 @@ async function uploadSingleFile(file, relPath, destBase, onProgress, onHashProgr
       let lastErr = null;
       for (let attempt = 0; attempt < 3; attempt++) {
         const r = await apiFetchBinary(
-            `/api/file-upload/chunk?id=${encodeURIComponent(upload_id)}&n=${i}&sha256=${sha256}`,
-            chunkBuf,
+          `/api/file-upload/chunk?id=${encodeURIComponent(upload_id)}&n=${i}&sha256=${sha256}`,
+          chunkBuf,
         );
         if (r.ok) { lastErr = null; break; }
         lastErr = await r.text();
@@ -1433,12 +1423,12 @@ async function batchAdd() {
       const result = await r.json();
       if (result.added === 0) {
         const msg = result.skipped > 0
-            ? `No new items found — ${result.skipped} already tracked.`
-            : 'Source folder is empty or has no new items.';
+          ? `No new items found — ${result.skipped} already tracked.`
+          : 'Source folder is empty or has no new items.';
         showError(msg);
       } else {
         document.getElementById('status-text').textContent =
-            `Batch add: ${result.added} new torrent(s) added, ${result.skipped} already tracked — reloading…`;
+          `Batch add: ${result.added} new torrent(s) added, ${result.skipped} already tracked — reloading…`;
         setTimeout(loadTorrents, 2000);
       }
     } else {
