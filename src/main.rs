@@ -502,15 +502,15 @@ async fn seed_one(
         SeedProtocol::Rtc => "rtc",
         SeedProtocol::Both => "both",
     };
-    let version_str = match config.version {
-        TorrentVersion::V1 => "v1",
-        TorrentVersion::V2 => "v2",
-        TorrentVersion::Hybrid => "hybrid",
-    };
-    print!("[{}] Hashing pieces ({}, protocol={})… ", label, version_str, proto_str);
+    print!("[{}] Hashing pieces (protocol={})… ", label, proto_str);
     let torrent_info = match TorrentBuilder::build(&config) {
         Ok(ti) => {
-            println!("done.");
+            let version_str = match ti.version {
+                TorrentVersion::V1 => "v1",
+                TorrentVersion::V2 => "v2",
+                TorrentVersion::Hybrid => "hybrid",
+            };
+            println!("done ({}).", version_str);
             ti
         }
         Err(e) => {
