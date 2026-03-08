@@ -15,8 +15,6 @@ pub struct TorrentRegistryEntry {
     pub peer_count: Arc<AtomicUsize>,
     pub our_peer_id: [u8; 20],
     pub rate_limiter: Option<SharedRateLimiter>,
-    /// Cloned receivers of the seeder's internal stop channel.
-    /// Peers clone this to get their own receiver that fires when the seeder shuts down.
     pub stop_rx: watch::Receiver<bool>,
 }
 

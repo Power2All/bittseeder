@@ -161,11 +161,7 @@ pub fn parse_torrent_meta(data: &[u8]) -> Result<ParsedTorrentMeta, String> {
         }
     }
     let info_bytes = info_raw.ok_or("no info dict in torrent")?;
-    let info_hash: [u8; 20] = {
-        let mut h = Sha1::new();
-        h.update(info_bytes);
-        h.finalize().into()
-    };
+    let info_hash = sha1_hash(info_bytes);
     if info_bytes[0] != b'd' {
         return Err("info value is not a dict".to_string());
     }
@@ -425,15 +421,7 @@ pub fn build_torrent_bencode(
     let first = tracker_urls.first().map(|s| s.as_str()).unwrap_or("");
     out.extend_from_slice(b"8:announce");
     write_bencode_string(&mut out, first.as_bytes());
-    if !tracker_urls.is_empty() {
-        out.extend_from_slice(b"13:announce-listl");
-        out.push(b'l');
-        for url in tracker_urls {
-            write_bencode_string(&mut out, url.as_bytes());
-        }
-        out.push(b'e');
-        out.push(b'e');
-    }
+    bencode_append_announce_list(&mut out, tracker_urls);
     out.extend_from_slice(b"10:created by");
     write_bencode_string(&mut out, CREATED_BY.as_bytes());
     out.extend_from_slice(b"13:creation datei");
@@ -441,18 +429,7 @@ pub fn build_torrent_bencode(
     out.extend_from_slice(b"e");
     out.extend_from_slice(b"4:info");
     out.extend_from_slice(info_bytes);
-    if !webseed_urls.is_empty() {
-        out.extend_from_slice(b"8:url-list");
-        if webseed_urls.len() == 1 {
-            write_bencode_string(&mut out, webseed_urls[0].as_bytes());
-        } else {
-            out.extend_from_slice(b"l");
-            for url in webseed_urls {
-                write_bencode_string(&mut out, url.as_bytes());
-            }
-            out.extend_from_slice(b"e");
-        }
-    }
+    bencode_append_webseed_list(&mut out, webseed_urls);
     out.extend_from_slice(b"e");
     out
 }
@@ -466,11 +443,7 @@ pub fn write_bencode_string(out: &mut Vec<u8>, s: &[u8]) {
 pub fn build_magnet_uri(info_hash_hex: &str, name: &str, tracker_urls: &[String]) -> String {
     let encoded_name = utf8_percent_encode(name, QUERY_ENCODE).to_string();
     let mut uri = format!("magnet:?xt=urn:btih:{}&dn={}", info_hash_hex, encoded_name);
-    for url in tracker_urls {
-        let encoded_tracker = utf8_percent_encode(url, QUERY_ENCODE).to_string();
-        uri.push_str("&tr=");
-        uri.push_str(&encoded_tracker);
-    }
+    append_tracker_params(&mut uri, tracker_urls);
     uri
 }
 
@@ -478,6 +451,62 @@ pub fn sha256_block(data: &[u8]) -> [u8; 32] {
     let mut h = Sha256::new();
     h.update(data);
     h.finalize().into()
+}
+
+fn sha1_hash(data: &[u8]) -> [u8; 20] {
+    let mut h = Sha1::new();
+    h.update(data);
+    h.finalize().into()
+}
+
+fn append_tracker_params(uri: &mut String, tracker_urls: &[String]) {
+    for url in tracker_urls {
+        uri.push_str("&tr=");
+        uri.push_str(&utf8_percent_encode(url, QUERY_ENCODE).to_string());
+    }
+}
+
+fn bencode_append_announce_list(out: &mut Vec<u8>, tracker_urls: &[String]) {
+    if !tracker_urls.is_empty() {
+        out.extend_from_slice(b"13:announce-listl");
+        out.push(b'l');
+        for url in tracker_urls {
+            write_bencode_string(out, url.as_bytes());
+        }
+        out.push(b'e');
+        out.push(b'e');
+    }
+}
+
+fn bencode_append_webseed_list(out: &mut Vec<u8>, webseed_urls: &[String]) {
+    if !webseed_urls.is_empty() {
+        out.extend_from_slice(b"8:url-list");
+        if webseed_urls.len() == 1 {
+            write_bencode_string(out, webseed_urls[0].as_bytes());
+        } else {
+            out.push(b'l');
+            for url in webseed_urls {
+                write_bencode_string(out, url.as_bytes());
+            }
+            out.push(b'e');
+        }
+    }
+}
+
+type MerkleData = (Vec<[u8; 32]>, Vec<([u8; 32], Vec<[u8; 32]>)>);
+
+fn build_all_merkle_data(files: &[FileEntry], piece_length: u64) -> io::Result<MerkleData> {
+    let mut roots = Vec::new();
+    let mut piece_layers = Vec::new();
+    for file in files {
+        let (root, layer_hashes) =
+            build_merkle_tree_and_layers(&file.path, file.length, piece_length)?;
+        if !layer_hashes.is_empty() {
+            piece_layers.push((root, layer_hashes));
+        }
+        roots.push(root);
+    }
+    Ok((roots, piece_layers))
 }
 
 fn next_power_of_2(n: usize) -> usize {
@@ -714,15 +743,7 @@ pub fn build_v2_torrent_bencode(
     let first = tracker_urls.first().map(|s| s.as_str()).unwrap_or("");
     out.extend_from_slice(b"8:announce");
     write_bencode_string(&mut out, first.as_bytes());
-    if !tracker_urls.is_empty() {
-        out.extend_from_slice(b"13:announce-listl");
-        out.push(b'l');
-        for url in tracker_urls {
-            write_bencode_string(&mut out, url.as_bytes());
-        }
-        out.push(b'e');
-        out.push(b'e');
-    }
+    bencode_append_announce_list(&mut out, tracker_urls);
     out.extend_from_slice(b"10:created by");
     write_bencode_string(&mut out, CREATED_BY.as_bytes());
     out.extend_from_slice(b"13:creation date");
@@ -733,18 +754,7 @@ pub fn build_v2_torrent_bencode(
     out.extend_from_slice(info_bytes);
     out.extend_from_slice(b"12:piece layers");
     out.extend_from_slice(piece_layers_bytes);
-    if !webseed_urls.is_empty() {
-        out.extend_from_slice(b"8:url-list");
-        if webseed_urls.len() == 1 {
-            write_bencode_string(&mut out, webseed_urls[0].as_bytes());
-        } else {
-            out.push(b'l');
-            for url in webseed_urls {
-                write_bencode_string(&mut out, url.as_bytes());
-            }
-            out.extend_from_slice(b"e");
-        }
-    }
+    bencode_append_webseed_list(&mut out, webseed_urls);
     out.push(b'e');
     out
 }
@@ -752,22 +762,14 @@ pub fn build_v2_torrent_bencode(
 pub fn build_v2_magnet_uri(v2_hash_hex: &str, name: &str, tracker_urls: &[String]) -> String {
     let encoded_name = utf8_percent_encode(name, QUERY_ENCODE).to_string();
     let mut uri = format!("magnet:?xt=urn:btmh:1220{}&dn={}", v2_hash_hex, encoded_name);
-    for url in tracker_urls {
-        let encoded_tracker = utf8_percent_encode(url, QUERY_ENCODE).to_string();
-        uri.push_str("&tr=");
-        uri.push_str(&encoded_tracker);
-    }
+    append_tracker_params(&mut uri, tracker_urls);
     uri
 }
 
 pub fn build_hybrid_magnet_uri(v1_hex: &str, v2_hex: &str, name: &str, tracker_urls: &[String]) -> String {
     let encoded_name = utf8_percent_encode(name, QUERY_ENCODE).to_string();
     let mut uri = format!("magnet:?xt=urn:btih:{}&xt=urn:btmh:1220{}&dn={}", v1_hex, v2_hex, encoded_name);
-    for url in tracker_urls {
-        let encoded_tracker = utf8_percent_encode(url, QUERY_ENCODE).to_string();
-        uri.push_str("&tr=");
-        uri.push_str(&encoded_tracker);
-    }
+    append_tracker_params(&mut uri, tracker_urls);
     uri
 }
 
@@ -784,14 +786,9 @@ pub fn build_v1(
 ) -> io::Result<TorrentInfo> {
     let pieces = hash_pieces(&files, piece_length, total_size, piece_count)?;
     let info_bytes = build_info_bencode(&name, piece_length, &pieces, &files, total_size);
-    let info_hash: [u8; 20] = {
-        let mut h = Sha1::new();
-        h.update(&info_bytes);
-        h.finalize().into()
-    };
+    let info_hash = sha1_hash(&info_bytes);
     let torrent_bytes = build_torrent_bencode(&info_bytes, tracker_urls, creation_date, webseed_urls);
-    let info_hash_hex = hex::encode(info_hash);
-    let magnet_uri = build_magnet_uri(&info_hash_hex, &name, tracker_urls);
+    let magnet_uri = build_magnet_uri(&hex::encode(info_hash), &name, tracker_urls);
     Ok(TorrentInfo {
         name,
         piece_length,
@@ -820,28 +817,14 @@ pub fn build_v2(
     name: String,
     creation_date: u64,
 ) -> io::Result<TorrentInfo> {
-    let mut roots: Vec<[u8; 32]> = Vec::new();
-    let mut piece_layers: Vec<([u8; 32], Vec<[u8; 32]>)> = Vec::new();
-    for file in &files {
-        let (root, layer_hashes) =
-            build_merkle_tree_and_layers(&file.path, file.length, piece_length)?;
-        if !layer_hashes.is_empty() {
-            piece_layers.push((root, layer_hashes));
-        }
-        roots.push(root);
-    }
+    let (roots, piece_layers) = build_all_merkle_data(&files, piece_length)?;
     let info_bytes = build_v2_info_bencode(&name, piece_length, &files, &roots);
     let piece_layers_bytes = build_piece_layers_bencode(&piece_layers);
-    let v2_hash: [u8; 32] = {
-        let mut h = Sha256::new();
-        h.update(&info_bytes);
-        h.finalize().into()
-    };
+    let v2_hash = sha256_block(&info_bytes);
     let info_hash: [u8; 20] = v2_hash[..20].try_into().unwrap();
     let torrent_bytes =
         build_v2_torrent_bencode(&info_bytes, tracker_urls, creation_date, webseed_urls, &piece_layers_bytes);
-    let v2_hash_hex = hex::encode(v2_hash);
-    let magnet_uri = build_v2_magnet_uri(&v2_hash_hex, &name, tracker_urls);
+    let magnet_uri = build_v2_magnet_uri(&hex::encode(v2_hash), &name, tracker_urls);
     Ok(TorrentInfo {
         name,
         piece_length,
@@ -871,35 +854,16 @@ pub fn build_hybrid(
     creation_date: u64,
 ) -> io::Result<TorrentInfo> {
     let pieces = hash_pieces(&files, piece_length, total_size, piece_count)?;
-    let mut roots: Vec<[u8; 32]> = Vec::new();
-    let mut piece_layers: Vec<([u8; 32], Vec<[u8; 32]>)> = Vec::new();
-    for file in &files {
-        let (root, layer_hashes) =
-            build_merkle_tree_and_layers(&file.path, file.length, piece_length)?;
-        if !layer_hashes.is_empty() {
-            piece_layers.push((root, layer_hashes));
-        }
-        roots.push(root);
-    }
+    let (roots, piece_layers) = build_all_merkle_data(&files, piece_length)?;
     let info_bytes =
         build_hybrid_info_bencode(&name, piece_length, &pieces, &files, &roots, total_size);
     let piece_layers_bytes = build_piece_layers_bencode(&piece_layers);
-    let info_hash: [u8; 20] = {
-        let mut h = Sha1::new();
-        h.update(&info_bytes);
-        h.finalize().into()
-    };
-    let v2_hash: [u8; 32] = {
-        let mut h = Sha256::new();
-        h.update(&info_bytes);
-        h.finalize().into()
-    };
+    let info_hash = sha1_hash(&info_bytes);
+    let v2_hash = sha256_block(&info_bytes);
     let torrent_bytes =
         build_v2_torrent_bencode(&info_bytes, tracker_urls, creation_date, webseed_urls, &piece_layers_bytes);
-    let v1_hex = hex::encode(info_hash);
-    let v2_hex = hex::encode(v2_hash);
-    let magnet_uri = build_magnet_uri(&v1_hex, &name, tracker_urls);
-    let v2_magnet_uri = Some(build_v2_magnet_uri(&v2_hex, &name, tracker_urls));
+    let magnet_uri = build_magnet_uri(&hex::encode(info_hash), &name, tracker_urls);
+    let v2_magnet_uri = Some(build_v2_magnet_uri(&hex::encode(v2_hash), &name, tracker_urls));
     Ok(TorrentInfo {
         name,
         piece_length,

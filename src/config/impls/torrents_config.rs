@@ -26,87 +26,53 @@ impl TorrentEntry {
         if self.file.is_empty() && self.torrent_file.is_none() {
             return Err("torrent entry needs at least one file or a torrent_file path".to_string());
         }
-        let file_paths = if self.allowed_extensions.is_some() {
-            let mut filtered_files = Vec::new();
-            for file_path in &self.file {
-                let path = PathBuf::from(file_path);
-                if path.is_dir() {
-                    if !path.exists() {
-                        return Err(format!("Directory not found: {}", path.display()));
-                    }
-                    let mut dir_files: Vec<(PathBuf, Vec<String>)> = Vec::new();
-                    match collect_dir_files(&path, &path, &mut dir_files) {
-                        Ok(_) => {
-                            for (file_path, _name_parts) in dir_files {
-                                if let Some(allowed) = &self.allowed_extensions
-                                    && let Some(ext) = file_path.extension().and_then(|e| e.to_str())
-                                {
-                                    let ext_lower = ext.to_lowercase();
-                                    if !allowed.iter().any(|a| a.to_lowercase() == ext_lower) {
-                                        log::debug!("[Config] Skipping {} (extension not allowed)", file_path.display());
-                                        continue;
-                                    }
-                                }
-                                filtered_files.push(file_path);
-                            }
-                        }
-                        Err(e) => {
-                            log::warn!("[Config] Failed to scan directory {}: {} - skipping", path.display(), e);
-                        }
-                    }
-                } else {
-                    if !path.exists() {
-                        return Err(format!("File not found: {}", path.display()));
-                    }
-                    if let Some(allowed) = &self.allowed_extensions
-                        && let Some(ext) = path.extension().and_then(|e| e.to_str())
-                    {
-                        let ext_lower = ext.to_lowercase();
-                        if !allowed.iter().any(|a| a.to_lowercase() == ext_lower) {
-                            log::debug!("[Config] Skipping {} (extension not allowed)", path.display());
-                            continue;
-                        }
-                    }
-                    filtered_files.push(path);
+        let mut file_paths: Vec<PathBuf> = Vec::new();
+        for file_path in &self.file {
+            let path = PathBuf::from(file_path);
+            if path.is_dir() {
+                if !path.exists() {
+                    return Err(format!("Directory not found: {}", path.display()));
                 }
+                let mut dir_files: Vec<(PathBuf, Vec<String>)> = Vec::new();
+                match collect_dir_files(&path, &path, &mut dir_files) {
+                    Ok(_) => {
+                        for (fp, _) in dir_files {
+                            if let Some(allowed) = &self.allowed_extensions
+                                && let Some(ext) = fp.extension().and_then(|e| e.to_str())
+                                && !allowed.iter().any(|a| a.to_lowercase() == ext.to_lowercase()) {
+                                log::debug!("[Config] Skipping {} (extension not allowed)", fp.display());
+                                continue;
+                            }
+                            file_paths.push(fp);
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("[Config] Failed to scan directory {}: {} - skipping", path.display(), e);
+                    }
+                }
+            } else {
+                if !path.exists() {
+                    return Err(format!("File not found: {}", path.display()));
+                }
+                if let Some(allowed) = &self.allowed_extensions
+                    && let Some(ext) = path.extension().and_then(|e| e.to_str())
+                    && !allowed.iter().any(|a| a.to_lowercase() == ext.to_lowercase()) {
+                    log::debug!("[Config] Skipping {} (extension not allowed)", path.display());
+                    continue;
+                }
+                file_paths.push(path);
             }
-            if filtered_files.is_empty() && self.torrent_file.is_none() && !self.file.is_empty() {
+        }
+        if self.allowed_extensions.is_some() {
+            if file_paths.is_empty() && self.torrent_file.is_none() && !self.file.is_empty() {
                 return Err("No files found after extension filtering. Check your allowed_extensions setting.".to_string());
             }
             log::info!(
                 "[Config] Processed {} file(s): found {} after extension filtering",
                 self.file.len(),
-                filtered_files.len()
+                file_paths.len()
             );
-            filtered_files
-        } else {
-            let mut all_files = Vec::new();
-            for file_path in &self.file {
-                let path = PathBuf::from(file_path);
-                if path.is_dir() {
-                    if !path.exists() {
-                        return Err(format!("Directory not found: {}", path.display()));
-                    }
-                    let mut dir_files: Vec<(PathBuf, Vec<String>)> = Vec::new();
-                    match collect_dir_files(&path, &path, &mut dir_files) {
-                        Ok(_) => {
-                            for (file_path, _name_parts) in dir_files {
-                                all_files.push(file_path);
-                            }
-                        }
-                        Err(e) => {
-                            log::warn!("[Config] Failed to scan directory {}: {} - skipping", path.display(), e);
-                        }
-                    }
-                } else {
-                    if !path.exists() {
-                        return Err(format!("File not found: {}", path.display()));
-                    }
-                    all_files.push(path);
-                }
-            }
-            all_files
-        };
+        }
         let out_file = if self.create_torrent {
             self.torrent_file.as_ref().map(PathBuf::from)
         } else {

@@ -3,6 +3,7 @@ use crate::seeder::seeder::{
     fmt_bytes,
     generate_peer_id,
     handle_peer,
+    verify_pieces,
     SharedRateLimiter
 };
 use crate::seeder::structs::peer_conn::PeerConn;
@@ -26,6 +27,12 @@ use std::sync::atomic::{
 };
 use std::sync::Arc;
 use tokio::sync::Mutex;
+
+fn truncate_v2_hash(v2: &[u8; 32]) -> [u8; 20] {
+    let mut out = [0u8; 20];
+    out.copy_from_slice(&v2[..20]);
+    out
+}
 
 impl Seeder {
     pub fn new(config: SeederConfig, torrent_info: TorrentInfo) -> Self {
@@ -80,6 +87,19 @@ impl Seeder {
         }
         if missing {
             return Err("one or more data files are missing — cannot seed".into());
+        }
+        if !self.torrent_info.pieces.is_empty() {
+            println!(
+                "[Seeder] Verifying {} piece(s) ({})…",
+                self.torrent_info.piece_count,
+                fmt_bytes(self.torrent_info.total_size),
+            );
+            let ti = Arc::clone(&self.torrent_info);
+            tokio::task::spawn_blocking(move || verify_pieces(&ti))
+                .await
+                .map_err(|e| format!("verify task panicked: {}", e))?
+                .map_err(|e| format!("[Seeder] Data verification FAILED — {}", e))?;
+            println!("[Seeder] All pieces OK.");
         }
         let rate_limiter: Option<SharedRateLimiter> =
             self.config.upload_limit.and_then(|kbs| {
@@ -194,12 +214,8 @@ impl Seeder {
                 };
                 let mut map = reg.write().await;
                 map.insert(self.torrent_info.info_hash, entry.clone());
-                // Also register the truncated v2 hash so peers connecting with
-                // the v2 info hash (first 20 bytes of SHA-256) are accepted.
                 if let Some(v2) = self.torrent_info.v2_info_hash {
-                    let mut truncated = [0u8; 20];
-                    truncated.copy_from_slice(&v2[..20]);
-                    map.insert(truncated, entry);
+                    map.insert(truncate_v2_hash(&v2), entry);
                 }
             } else {
                 let listen_addr = format!("0.0.0.0:{}", self.config.listen_port);
@@ -370,9 +386,7 @@ impl Seeder {
                 let mut map = reg.write().await;
                 map.remove(&self.torrent_info.info_hash);
                 if let Some(v2) = self.torrent_info.v2_info_hash {
-                    let mut truncated = [0u8; 20];
-                    truncated.copy_from_slice(&v2[..20]);
-                    map.remove(&truncated);
+                    map.remove(&truncate_v2_hash(&v2));
                 }
             }
         if !bt_trackers.is_empty() {
@@ -383,13 +397,12 @@ impl Seeder {
                     std::time::Duration::from_secs(5),
                     tracker.announce(uploaded, "stopped"),
                 ).await {
-                    Ok(Ok(_))  => log::info!("[Tracker/BT] Stopped announcement sent"),
+                    Ok(Ok(_)) => log::info!("[Tracker/BT] Stopped announcement sent"),
                     Ok(Err(e)) => log::warn!("[Tracker/BT] Stopped announce failed: {}", e),
-                    Err(_)     => log::warn!("[Tracker/BT] Stopped announce timed out"),
+                    Err(_) => log::warn!("[Tracker/BT] Stopped announce timed out"),
                 }
             }
         }
-
         Ok(())
     }
 

@@ -1,5 +1,6 @@
 use crate::seeder::structs::peer_count_guard::PeerCountGuard;
 use crate::seeder::structs::torrent_registry::TorrentRegistry;
+use crate::torrent::enums::torrent_version::TorrentVersion;
 use crate::seeder::types::{
     BT_HANDSHAKE_LEN,
     BT_PROTOCOL,
@@ -28,6 +29,10 @@ use governor::state::{
 };
 use governor::RateLimiter;
 use rand::RngExt;
+use sha1::{
+    Digest,
+    Sha1
+};
 use std::fs::File;
 use std::io::{
     Read,
@@ -115,6 +120,38 @@ pub fn read_block(info: &TorrentInfo, piece_index: usize, begin: u64, length: us
     Ok(buf)
 }
 
+pub fn verify_pieces(info: &TorrentInfo) -> Result<(), String> {
+    if matches!(info.version, TorrentVersion::V2) || info.pieces.is_empty() {
+        return Ok(());
+    }
+    let piece_count = info.piece_count;
+    let report_interval = (piece_count / 20).max(1);
+    for pi in 0..piece_count {
+        let data = read_piece(info, pi)
+            .map_err(|e| format!("piece {} read error: {}", pi, e))?;
+        let mut hasher = Sha1::new();
+        hasher.update(&data);
+        let computed: [u8; 20] = hasher.finalize().into();
+        let hash_start = pi * 20;
+        let expected: [u8; 20] = info.pieces[hash_start..hash_start + 20]
+            .try_into()
+            .unwrap();
+        if computed != expected {
+            return Err(format!(
+                "piece {} hash mismatch (expected={} got={})",
+                pi,
+                hex::encode(expected),
+                hex::encode(computed),
+            ));
+        }
+        if (pi + 1) % report_interval == 0 || pi + 1 == piece_count {
+            let pct = (pi + 1) * 100 / piece_count;
+            println!("[Seeder] Verify {}/{} ({}%)", pi + 1, piece_count, pct);
+        }
+    }
+    Ok(())
+}
+
 async fn send_bitfield(stream: &mut TcpStream, piece_count: usize) -> std::io::Result<()> {
     let bitfield_len = piece_count.div_ceil(8);
     let mut bitfield = vec![0xFFu8; bitfield_len];
@@ -197,33 +234,26 @@ async fn handle_peer_connection(
         addr,
         peer_id_hex.get(..8).unwrap_or(&peer_id_hex)
     );
-    // Log extension bits advertised by the peer (bytes 20-27 of handshake).
     let ext_bytes = &peer_hs[20..28];
     log::debug!("[BT] {} ext flags: {:02x?}", addr, ext_bytes);
-
     if let Err(e) = send_bitfield(&mut stream, torrent_info.piece_count).await {
         log::debug!("[BT] Bitfield send failed to {}: {}", addr, e);
         return;
     }
     log::debug!("[BT] → bitfield ({} pieces) to {}", torrent_info.piece_count, addr);
-
     if let Err(e) = send_unchoke(&mut stream).await {
         log::debug!("[BT] Unchoke send failed to {}: {}", addr, e);
         return;
     }
     log::debug!("[BT] → unchoke to {}", addr);
-
-    // Send keepalive every 2 minutes to prevent the peer timing out during idle periods.
     let keepalive_period = std::time::Duration::from_secs(120);
     let mut keepalive = tokio::time::interval_at(
         tokio::time::Instant::now() + keepalive_period,
         keepalive_period,
     );
-
     loop {
         tokio::select! {
             biased;
-            // Check stop signal first so we break immediately when the seeder shuts down.
             _ = stop_rx.changed() => {
                 if *stop_rx.borrow() {
                     log::debug!("[BT] Stop signal — closing connection to {}", addr);
@@ -324,7 +354,6 @@ async fn handle_peer_connection(
             }
         }
     }
-
     log::info!(
         "[BT] Peer disconnected: {} ({}…) — uploaded: {}",
         addr,
@@ -549,35 +578,13 @@ async fn send_piece(
 }
 
 fn read_piece(info: &TorrentInfo, piece_index: usize) -> std::io::Result<Vec<u8>> {
-    let start = piece_index as u64 * info.piece_length;
-    let end = (start + info.piece_length).min(info.total_size);
-    if start >= info.total_size {
+    if piece_index >= info.piece_count {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            format!(
-                "piece {} out of range (total {} pieces)",
-                piece_index, info.piece_count
-            ),
+            format!("piece {} out of range (total {} pieces)", piece_index, info.piece_count),
         ));
     }
-    let need = (end - start) as usize;
-    let mut buf = vec![0u8; need];
-    let mut filled = 0usize;
-    for file_entry in &info.files {
-        let file_end = file_entry.offset + file_entry.length;
-        let overlap_start = start.max(file_entry.offset);
-        let overlap_end = end.min(file_end);
-        if overlap_start >= overlap_end {
-            continue;
-        }
-        let in_file_start = overlap_start - file_entry.offset;
-        let n = (overlap_end - overlap_start) as usize;
-        let mut f = File::open(&file_entry.path).map_err(|e| {
-            std::io::Error::new(e.kind(), format!("{}: {}", file_entry.path.display(), e))
-        })?;
-        f.seek(SeekFrom::Start(in_file_start))?;
-        f.read_exact(&mut buf[filled..filled + n])?;
-        filled += n;
-    }
-    Ok(buf)
+    let piece_start = piece_index as u64 * info.piece_length;
+    let piece_end = (piece_start + info.piece_length).min(info.total_size);
+    read_block(info, piece_index, 0, (piece_end - piece_start) as usize)
 }
