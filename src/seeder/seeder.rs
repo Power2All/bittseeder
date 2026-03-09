@@ -241,11 +241,6 @@ async fn handle_peer_connection(
         return;
     }
     log::debug!("[BT] → bitfield ({} pieces) to {}", torrent_info.piece_count, addr);
-    if let Err(e) = send_unchoke(&mut stream).await {
-        log::debug!("[BT] Unchoke send failed to {}: {}", addr, e);
-        return;
-    }
-    log::debug!("[BT] → unchoke to {}", addr);
     let keepalive_period = std::time::Duration::from_secs(120);
     let mut keepalive = tokio::time::interval_at(
         tokio::time::Instant::now() + keepalive_period,
@@ -335,6 +330,9 @@ async fn handle_peer_connection(
                             }
                             MSG_CHOKE => log::debug!("[BT] ← choke from {}", addr),
                             MSG_UNCHOKE => log::debug!("[BT] ← unchoke from {}", addr),
+                            MSG_BITFIELD => {
+                                log::debug!("[BT] ← bitfield ({} bytes) from {}", payload.len(), addr);
+                            }
                             MSG_HAVE => {
                                 if payload.len() >= 4 {
                                     let piece = u32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
